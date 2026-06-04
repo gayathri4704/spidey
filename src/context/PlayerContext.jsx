@@ -28,6 +28,7 @@ import {
 
 import { supabase }                      from '../lib/supabaseClient';
 import { getAudioCache, setAudioCache }  from '../db/spideyDB';
+import { RealtimeChannel }               from '@supabase/supabase-js'; // type-only hint
 
 
 const BUCKET = 'spidey';
