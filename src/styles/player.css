@@ -1,0 +1,522 @@
+/* =========================================
+   Spidey – Music Player Styles (Spotify-like)
+   ========================================= */
+
+/* ── Mini Player ── */
+.music-player-mini {
+  position: fixed;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  z-index: 200;
+  background: rgba(18, 20, 30, 0.98);
+  backdrop-filter: blur(24px);
+  -webkit-backdrop-filter: blur(24px);
+  border-top: 1px solid rgba(192, 57, 43, 0.15);
+  height: 60px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 var(--space-md);
+  box-shadow: 0 -4px 20px rgba(0, 0, 0, 0.5);
+  cursor: pointer;
+  transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1), bottom 0.3s ease;
+  user-select: none;
+}
+.music-player-mini:hover {
+  background: rgba(24, 28, 40, 0.98);
+}
+.music-player-mini.with-bottom-nav {
+  bottom: 65px; /* Offset for the 65px tall bottom nav */
+  border-bottom: 1px solid rgba(192, 57, 43, 0.15);
+  box-shadow: 0 -2px 10px rgba(0, 0, 0, 0.4);
+}
+.music-player-mini.hidden-by-fullscreen {
+  transform: translateY(150%);
+  pointer-events: none;
+}
+
+/* Adjust dashboard body padding to account for bottom nav AND mini player */
+.has-player .dashboard-body {
+  padding-bottom: calc(65px + 60px + var(--space-xl)); 
+}
+/* If no player is active but we are in UserHome, we just need padding for the bottom nav */
+body:not(.has-player) #user-main {
+  padding-bottom: calc(65px + var(--space-xl));
+}
+
+.mini-progress-top {
+  position: absolute;
+  top: 0;
+  left: 0;
+  height: 2px;
+  background: var(--spidey-red);
+  transition: width 0.1s linear;
+}
+
+.mini-left {
+  display: flex;
+  align-items: center;
+  gap: var(--space-sm);
+  min-width: 0;
+  flex: 1;
+}
+
+.mini-thumb {
+  width: 40px;
+  height: 40px;
+  border-radius: var(--radius-sm);
+  background: linear-gradient(135deg, var(--spidey-red-dark), var(--spidey-blue-dark));
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 1.1rem;
+  flex-shrink: 0;
+  position: relative;
+  overflow: hidden;
+  border: 1px solid rgba(192, 57, 43, 0.2);
+}
+.mini-thumb.spinning::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  background: conic-gradient(rgba(192, 57, 43, 0.3), transparent, rgba(37, 99, 235, 0.2), transparent, rgba(192, 57, 43, 0.3));
+  animation: webSpin 4s linear infinite;
+}
+
+.mini-info {
+  min-width: 0;
+}
+.mini-title {
+  font-family: var(--font-heading);
+  font-size: 0.9rem;
+  font-weight: 700;
+  color: var(--text-primary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  margin: 0;
+}
+.mini-artist {
+  font-size: 0.75rem;
+  color: var(--text-muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  margin: 0;
+}
+
+.mini-right {
+  display: flex;
+  align-items: center;
+  gap: var(--space-xs);
+  flex-shrink: 0;
+}
+.mini-btn {
+  background: none;
+  border: none;
+  color: var(--text-primary);
+  font-size: 1.2rem;
+  width: 40px;
+  height: 40px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  border-radius: 50%;
+  transition: transform 0.2s, background 0.2s;
+}
+.mini-btn:hover {
+  background: rgba(255, 255, 255, 0.1);
+  transform: scale(1.05);
+}
+.mini-btn:disabled {
+  opacity: 0.3;
+  cursor: not-allowed;
+}
+
+.mini-spin {
+  width: 16px;
+  height: 16px;
+  border: 2px solid rgba(255,255,255,0.3);
+  border-top-color: #fff;
+  border-radius: 50%;
+  animation: webSpin 0.7s linear infinite;
+}
+
+/* ── Full Screen Player ── */
+.music-player-full {
+  position: fixed;
+  inset: 0;
+  height: 100dvh;
+  min-height: 100vh;
+  z-index: 1000;
+  background: linear-gradient(180deg, var(--spidey-red-dark) 0%, var(--bg-primary) 100%);
+  display: flex;
+  flex-direction: column;
+  padding: var(--space-xl);
+  transform: translateY(100%);
+  opacity: 0;
+  transition: transform 0.4s cubic-bezier(0.4, 0, 0.2, 1), opacity 0.4s ease;
+  pointer-events: none;
+  overflow: hidden;
+}
+.music-player-full.open {
+  transform: translateY(0);
+  opacity: 1;
+  pointer-events: auto;
+}
+
+/* ── Full-screen top header row ── */
+.full-player-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: var(--space-xl);
+  flex-shrink: 0;
+}
+
+.full-close-btn {
+  /* Large touch target: 44×44 min, visible pill */
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 44px;
+  height: 44px;
+  min-width: 44px;
+  min-height: 44px;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.12);
+  border: 1.5px solid rgba(255, 255, 255, 0.2);
+  color: var(--text-primary);
+  cursor: pointer;
+  transition: background 0.2s, transform 0.2s, border-color 0.2s;
+  padding: 0;
+  /* Ensure it is always rendered on top */
+  position: relative;
+  z-index: 10;
+}
+.full-close-btn:hover {
+  background: rgba(255, 255, 255, 0.22);
+  border-color: rgba(255, 255, 255, 0.45);
+  transform: scale(1.08);
+}
+.full-close-btn:active {
+  transform: scale(0.95);
+}
+.full-close-btn svg {
+  /* Override any inherited display/flex issues */
+  display: block;
+  flex-shrink: 0;
+}
+
+.full-player-label {
+  font-family: var(--font-heading);
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+  user-select: none;
+}
+
+.full-player-header-spacer {
+  /* Mirror the close button width so the label stays centred */
+  width: 44px;
+  flex-shrink: 0;
+  display: block;
+}
+
+.full-album-art {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 250px;
+  margin-bottom: var(--space-2xl);
+}
+.full-album-placeholder {
+  width: 75vw;
+  max-width: 320px;
+  aspect-ratio: 1 / 1;
+  background: linear-gradient(135deg, rgba(192, 57, 43, 0.4), rgba(37, 99, 235, 0.4));
+  border-radius: var(--radius-xl);
+  box-shadow: 0 10px 40px rgba(0, 0, 0, 0.5);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 5rem;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  transition: transform 0.3s ease;
+}
+.full-album-placeholder.pulse {
+  animation: slowPulse 4s ease-in-out infinite;
+}
+
+@keyframes slowPulse {
+  0% { box-shadow: 0 10px 40px rgba(0, 0, 0, 0.5); }
+  50% { box-shadow: 0 15px 50px rgba(192, 57, 43, 0.4); }
+  100% { box-shadow: 0 10px 40px rgba(0, 0, 0, 0.5); }
+}
+
+.full-song-info {
+  margin-bottom: var(--space-xl);
+}
+.full-title-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-end;
+}
+.full-title {
+  font-family: var(--font-display);
+  font-size: clamp(1.2rem, 5vw, 1.8rem);
+  margin: 0 0 4px 0;
+  color: var(--text-primary);
+  line-height: 1.2;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.full-artist {
+  font-size: 1.1rem;
+  color: var(--text-muted);
+  margin: 0;
+}
+.full-badge {
+  font-size: 0.7rem;
+  padding: 4px 8px;
+  margin-bottom: 4px;
+}
+
+.full-progress-container {
+  margin-bottom: var(--space-xl);
+  width: 100%;
+  max-width: 100%;
+}
+
+.full-time-row {
+  display: flex;
+  justify-content: space-between;
+  margin-top: var(--space-xs);
+}
+
+.full-controls {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-2xl);
+  margin-bottom: var(--space-xl);
+}
+
+/* Base button styles used in full player */
+.player-btn {
+  background: none;
+  border: none;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: var(--radius-full);
+  transition: all var(--transition-base);
+  color: var(--text-primary);
+  padding: 0;
+}
+.player-btn:disabled {
+  opacity: 0.3;
+  cursor: not-allowed;
+}
+
+.player-btn--skip {
+  width: 48px;
+  height: 48px;
+  background: transparent;
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  color: var(--text-primary);
+}
+.player-btn--skip:hover:not(:disabled) {
+  background: rgba(255, 255, 255, 0.1);
+  transform: scale(1.1);
+}
+.player-btn--skip:active:not(:disabled) {
+  transform: scale(0.95);
+}
+
+.full-play-btn {
+  width: 72px;
+  height: 72px;
+  background: linear-gradient(135deg, var(--spidey-red-dark), var(--spidey-blue-dark));
+  color: var(--spidey-white);
+  box-shadow: 0 0 20px rgba(192, 57, 43, 0.3);
+}
+.full-play-btn:hover:not(:disabled) {
+  transform: scale(1.05);
+  box-shadow: 0 0 30px rgba(192, 57, 43, 0.5), 0 0 30px rgba(37, 99, 235, 0.5);
+}
+.full-play-btn:active:not(:disabled) {
+  transform: scale(0.95);
+}
+.full-play-btn .player-spin {
+  width: 24px;
+  height: 24px;
+  border-color: rgba(255,255,255,0.2);
+  border-top-color: var(--spidey-white);
+}
+
+.full-volume-container {
+  display: flex;
+  align-items: center;
+  gap: var(--space-sm);
+  width: 100%;
+  max-width: 300px;
+  margin: 0 auto;
+  opacity: 0.6;
+}
+.full-volume-container:hover { opacity: 1; }
+
+.player-time {
+  font-family: var(--font-mono);
+  font-size: 0.75rem;
+  color: var(--text-muted);
+}
+
+.player-seek {
+  width: 100%;
+  -webkit-appearance: none;
+  appearance: none;
+  height: 4px;
+  border-radius: var(--radius-full);
+  background: rgba(255, 255, 255, 0.2);
+  outline: none;
+  cursor: pointer;
+  transition: height var(--transition-fast);
+}
+.player-seek:hover { height: 6px; }
+.player-seek {
+  background: linear-gradient(
+    to right,
+    var(--text-primary) 0%,
+    var(--text-primary) var(--seek-pct, 0%),
+    rgba(255, 255, 255, 0.2) var(--seek-pct, 0%),
+    rgba(255, 255, 255, 0.2) 100%
+  );
+}
+.player-seek::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  background: var(--text-primary);
+  cursor: pointer;
+  opacity: 0;
+  transition: opacity 0.2s, transform 0.2s;
+}
+.player-seek:hover::-webkit-slider-thumb {
+  opacity: 1;
+  transform: scale(1.2);
+}
+.player-seek::-moz-range-thumb {
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  background: var(--text-primary);
+  border: none;
+  opacity: 0;
+}
+.player-seek:hover::-moz-range-thumb { opacity: 1; }
+
+.player-vol-icon {
+  font-size: 1rem;
+  color: inherit;
+  background: none;
+  border: none;
+  cursor: pointer;
+}
+.player-vol-slider {
+  flex: 1;
+  -webkit-appearance: none;
+  appearance: none;
+  height: 3px;
+  border-radius: var(--radius-full);
+  outline: none;
+  cursor: pointer;
+  background: linear-gradient(
+    to right,
+    var(--text-primary) 0%,
+    var(--text-primary) var(--vol-pct, 100%),
+    rgba(255, 255, 255, 0.2) var(--vol-pct, 100%),
+    rgba(255, 255, 255, 0.2) 100%
+  );
+}
+.player-vol-slider::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: var(--text-primary);
+}
+.player-vol-slider::-moz-range-thumb {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: var(--text-primary);
+  border: none;
+}
+
+/* Wave animation */
+.wave-icon {
+  display: flex;
+  align-items: flex-end;
+  gap: 2px;
+  height: 16px;
+}
+.wave-icon span {
+  display: block;
+  width: 3px;
+  background: var(--spidey-red-light);
+  border-radius: var(--radius-full);
+  animation: wave-bar 1s ease-in-out infinite;
+}
+.wave-icon span:nth-child(1) { height: 40%; animation-delay: 0s;    }
+.wave-icon span:nth-child(2) { height: 100%; animation-delay: 0.15s; }
+.wave-icon span:nth-child(3) { height: 60%; animation-delay: 0.3s;  }
+.wave-icon span:nth-child(4) { height: 80%; animation-delay: 0.45s; }
+
+@keyframes wave-bar {
+  0%, 100% { transform: scaleY(0.5); }
+  50%       { transform: scaleY(1);   }
+}
+
+.player-btn--stop {
+  width: 44px;
+  height: 44px;
+  background: linear-gradient(135deg, var(--spidey-red-dark), var(--spidey-blue-dark));
+  color: var(--spidey-white);
+  border-radius: 50%;
+  box-shadow: 0 0 10px rgba(192, 57, 43, 0.2);
+}
+.player-btn--stop:hover:not(:disabled) {
+  opacity: 1;
+  transform: scale(1.1);
+  box-shadow: 0 0 15px rgba(192, 57, 43, 0.4);
+}
+.player-btn--stop:active:not(:disabled) {
+  transform: scale(0.95);
+}
+
+@media (min-width: 768px) {
+  .music-player-full {
+    align-items: center;
+  }
+  .full-album-placeholder {
+    max-width: 280px;
+  }
+  .full-song-info, .full-progress-container, .full-controls, .full-volume-container {
+    width: 100%;
+    max-width: 500px;
+  }
+}
+
+@media (max-width: 600px) {
+  .mini-btn-next { display: none; }
+}

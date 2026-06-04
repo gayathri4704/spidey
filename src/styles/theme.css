@@ -1,0 +1,84 @@
+/* =========================================
+   Spidey Theme – Design Tokens
+   Dark Red & Blue color system
+   ========================================= */
+
+@import url('https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Inter:wght@300;400;500;600;700&family=Rajdhani:wght@400;500;600;700&display=swap');
+
+:root {
+  /* ── Brand Colors ── */
+  --spidey-red:         #c0392b;
+  --spidey-red-light:   #e74c3c;
+  --spidey-red-dark:    #7b2019;
+  --spidey-red-glow:    rgba(192, 57, 43, 0.4);
+
+  --spidey-blue:        #1a3a6b;
+  --spidey-blue-light:  #2563eb;
+  --spidey-blue-dark:   #0f2240;
+  --spidey-blue-glow:   rgba(37, 99, 235, 0.35);
+
+  --spidey-white:       #f0f4ff;
+  --spidey-gold:        #f5c518;
+
+  /* ── Background ── */
+  --bg-primary:         #0a0c14;
+  --bg-secondary:       #0f1220;
+  --bg-card:            #131826;
+  --bg-card-hover:      #1a2235;
+  --bg-overlay:         rgba(10, 12, 20, 0.85);
+
+  /* ── Text ── */
+  --text-primary:       #f0f4ff;
+  --text-secondary:     #9db4cc;
+  --text-muted:         #5a7090;
+  --text-accent:        #e74c3c;
+
+  /* ── Borders ── */
+  --border-primary:     rgba(192, 57, 43, 0.3);
+  --border-secondary:   rgba(37, 99, 235, 0.25);
+  --border-subtle:      rgba(240, 244, 255, 0.08);
+
+  /* ── Gradients ── */
+  --gradient-hero:      linear-gradient(135deg, #0a0c14 0%, #1a0a08 50%, #0a0f20 100%);
+  --gradient-red:       linear-gradient(135deg, var(--spidey-red-dark), var(--spidey-red-light));
+  --gradient-blue:      linear-gradient(135deg, var(--spidey-blue-dark), var(--spidey-blue-light));
+  --gradient-card:      linear-gradient(145deg, #131826, #0f1220);
+  --gradient-web:       linear-gradient(135deg, var(--spidey-red) 0%, transparent 50%, var(--spidey-blue) 100%);
+  --gradient-text-red:  linear-gradient(135deg, #e74c3c, #c0392b);
+  --gradient-text-blue: linear-gradient(135deg, #2563eb, #60a5fa);
+
+  /* ── Shadows ── */
+  --shadow-red:         0 0 20px rgba(192, 57, 43, 0.3), 0 4px 15px rgba(0, 0, 0, 0.5);
+  --shadow-blue:        0 0 20px rgba(37, 99, 235, 0.3), 0 4px 15px rgba(0, 0, 0, 0.5);
+  --shadow-card:        0 8px 32px rgba(0, 0, 0, 0.4), 0 2px 8px rgba(0, 0, 0, 0.3);
+  --shadow-glow-red:    0 0 40px rgba(192, 57, 43, 0.5);
+  --shadow-glow-blue:   0 0 40px rgba(37, 99, 235, 0.4);
+
+  /* ── Typography ── */
+  --font-display:   'Bebas Neue', sans-serif;
+  --font-heading:   'Rajdhani', sans-serif;
+  --font-body:      'Inter', system-ui, sans-serif;
+  --font-mono:      'Courier New', monospace;
+
+  /* ── Spacing ── */
+  --space-xs:   4px;
+  --space-sm:   8px;
+  --space-md:   16px;
+  --space-lg:   24px;
+  --space-xl:   40px;
+  --space-2xl:  64px;
+  --space-3xl:  96px;
+
+  /* ── Border Radius ── */
+  --radius-sm:   4px;
+  --radius-md:   8px;
+  --radius-lg:   12px;
+  --radius-xl:   20px;
+  --radius-full: 9999px;
+
+  /* ── Transitions ── */
+  --transition-fast:   0.15s ease;
+  --transition-base:   0.25s ease;
+  --transition-slow:   0.4s ease;
+  --transition-spring: 0.3s cubic-bezier(0.34, 1.56, 0.64, 1);
+}
