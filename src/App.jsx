@@ -36,13 +36,17 @@ function AppRouter() {
   );
 }
 
+import { ThemeProvider } from './context/ThemeContext';
+
 // ── App root ──────────────────────────────────────────────────
 export default function App() {
   return (
     <AuthProvider>
-      <PlayerProvider>
-        <AppRouter />
-      </PlayerProvider>
+      <ThemeProvider>
+        <PlayerProvider>
+          <AppRouter />
+        </PlayerProvider>
+      </ThemeProvider>
     </AuthProvider>
   );
 }

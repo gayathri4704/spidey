@@ -2,6 +2,61 @@
    Spidey – Dashboard Styles (Admin + User)
    ========================================= */
 
+/* ── Admin Form Styles ── */
+.admin-input, .admin-select, .admin-textarea {
+  width: 100%;
+  padding: 0.8rem;
+  background: var(--bg-secondary);
+  border: 1px solid var(--border-secondary);
+  border-radius: var(--radius-md);
+  color: var(--text-primary);
+  font-family: var(--font-body);
+  margin-top: 0.4rem;
+  margin-bottom: 1rem;
+}
+.admin-input:focus, .admin-select:focus, .admin-textarea:focus {
+  outline: none;
+  border-color: var(--spidey-red);
+  box-shadow: var(--shadow-glow-red);
+}
+.admin-checkbox-list {
+  background: var(--bg-secondary);
+  border: 1px solid var(--border-secondary);
+  border-radius: var(--radius-md);
+  padding: 0.5rem;
+  max-height: 200px;
+  overflow-y: auto;
+  margin-bottom: 1rem;
+}
+.admin-checkbox-item {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.5rem;
+  border-radius: var(--radius-sm);
+  transition: var(--transition-fast);
+}
+.admin-checkbox-item:hover {
+  background: var(--bg-card-hover);
+}
+.admin-checkbox-item input {
+  accent-color: var(--spidey-red);
+}
+.admin-color-picker {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  margin-bottom: 1rem;
+}
+.admin-color-picker input[type="color"] {
+  width: 40px;
+  height: 40px;
+  border: none;
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  background: none;
+}
+
 /* ── Dashboard layout ── */
 .dashboard-layout {
   min-height: 100vh;
@@ -992,4 +1047,399 @@
   text-align: center;
   color: var(--text-muted);
   font-size: 0.9rem;
+}
+
+/* =========================================
+   Playlist Cards (Library tab)
+   ========================================= */
+
+.playlist-card {
+  background: rgba(255, 255, 255, 0.02);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-lg);
+  overflow: hidden;
+  transition: border-color var(--transition-fast), box-shadow var(--transition-fast);
+}
+.playlist-card:hover {
+  border-color: var(--border-primary);
+  box-shadow: 0 4px 20px rgba(0,0,0,0.25);
+}
+
+.playlist-card-header {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.75rem 1rem;
+}
+
+.playlist-expand-btn {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  flex: 1;
+  background: none;
+  border: none;
+  color: inherit;
+  cursor: pointer;
+  text-align: left;
+  min-width: 0;
+  padding: 0;
+  transition: opacity var(--transition-fast);
+}
+.playlist-expand-btn:hover {
+  opacity: 0.85;
+}
+.playlist-expand-btn:hover .playlist-card-name {
+  color: var(--spidey-blue-light);
+}
+
+.playlist-card-name {
+  margin: 0;
+  font-family: var(--font-heading);
+  font-size: 0.95rem;
+  font-weight: 600;
+  color: var(--text-primary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  transition: color var(--transition-fast);
+}
+.playlist-card-desc {
+  margin: 0;
+  font-size: 0.78rem;
+  color: var(--text-muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.playlist-card-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  flex-shrink: 0;
+}
+.playlist-songs-body {
+  padding: 0.75rem 1rem 1rem;
+  border-top: 1px solid var(--border-subtle);
+  background: rgba(0, 0, 0, 0.12);
+}
+
+/* ── Add-to-Playlist picker bottom sheet ── */
+@keyframes slideUpPicker {
+  from { transform: translateY(100%); opacity: 0; }
+  to   { transform: translateY(0);    opacity: 1; }
+}
+
+/* =========================================
+   Admin Dashboard Styles
+   ========================================= */
+
+.admin-tabs-nav {
+  display: flex;
+  gap: 0.5rem;
+  margin-bottom: 2rem;
+  border-bottom: 1px solid var(--border-subtle);
+  padding-bottom: 0.5rem;
+  overflow-x: auto;
+}
+
+.admin-tab-btn {
+  background: none;
+  border: none;
+  color: var(--text-muted);
+  padding: 0.5rem 1rem;
+  font-family: var(--font-heading);
+  font-weight: 600;
+  font-size: 0.95rem;
+  cursor: pointer;
+  border-radius: var(--radius-md);
+  transition: all var(--transition-fast);
+  white-space: nowrap;
+}
+
+.admin-tab-btn:hover {
+  color: var(--text-primary);
+  background: rgba(255, 255, 255, 0.05);
+}
+
+.admin-tab-btn.active {
+  color: var(--spidey-red-light);
+  background: rgba(192, 57, 43, 0.15);
+  border: 1px solid rgba(192, 57, 43, 0.3);
+}
+
+.admin-filters-row {
+  display: flex;
+  gap: 1rem;
+  margin-bottom: 1.5rem;
+  flex-wrap: wrap;
+}
+
+.admin-search-input {
+  flex: 1;
+  min-width: 200px;
+}
+
+.admin-filter-select {
+  min-width: 150px;
+  padding: 10px 14px;
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-md);
+  color: var(--text-primary);
+}
+
+.admin-filter-select option {
+  background: #121212;
+  color: #fff;
+}
+
+.admin-table-container {
+  width: 100%;
+  overflow-x: auto;
+  background: rgba(255, 255, 255, 0.01);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-lg);
+  margin-bottom: 2rem;
+}
+
+.admin-table {
+  width: 100%;
+  border-collapse: collapse;
+  text-align: left;
+  font-size: 0.9rem;
+}
+
+.admin-table th, .admin-table td {
+  padding: 0.85rem 1.2rem;
+  border-bottom: 1px solid var(--border-subtle);
+}
+
+.admin-table th {
+  font-family: var(--font-heading);
+  font-weight: 600;
+  color: var(--text-muted);
+  background: rgba(255, 255, 255, 0.02);
+  text-transform: uppercase;
+  font-size: 0.75rem;
+  letter-spacing: 0.05em;
+}
+
+.admin-table tr:hover td {
+  background: rgba(255, 255, 255, 0.02);
+}
+
+.admin-table td {
+  color: var(--text-primary);
+  vertical-align: middle;
+}
+
+.admin-recent-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+  gap: 1.5rem;
+  margin-top: 1.5rem;
+}
+
+.admin-recent-box {
+  background: rgba(255, 255, 255, 0.01);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-lg);
+  padding: 1.25rem;
+}
+
+.admin-recent-title {
+  font-family: var(--font-heading);
+  font-size: 1rem;
+  color: var(--text-primary);
+  margin-top: 0;
+  margin-bottom: 1rem;
+  border-bottom: 1px solid var(--border-subtle);
+  padding-bottom: 0.5rem;
+}
+
+.admin-recent-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+.admin-recent-item {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 0.5rem 0.75rem;
+  background: rgba(255,255,255,0.02);
+  border-radius: var(--radius-md);
+}
+
+/* Admin Modal */
+.admin-modal-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(0, 0, 0, 0.75);
+  backdrop-filter: blur(4px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1100;
+  animation: fadeIn 0.2s ease-out;
+}
+
+.admin-modal {
+  background: #181818;
+  border: 1px solid var(--border-primary);
+  border-radius: var(--radius-lg);
+  width: 90%;
+  max-width: 500px;
+  max-height: 80vh;
+  overflow-y: auto;
+  box-shadow: 0 10px 30px rgba(0,0,0,0.5);
+  display: flex;
+  flex-direction: column;
+}
+
+.admin-modal-header {
+  padding: 1.25rem;
+  border-bottom: 1px solid var(--border-subtle);
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.admin-modal-title {
+  margin: 0;
+  font-family: var(--font-heading);
+  font-size: 1.1rem;
+  color: var(--text-primary);
+}
+
+.admin-modal-close {
+  background: none;
+  border: none;
+  color: var(--text-muted);
+  font-size: 1.2rem;
+  cursor: pointer;
+}
+
+.admin-modal-close:hover {
+  color: var(--text-primary);
+}
+
+.admin-modal-body {
+  padding: 1.25rem;
+  overflow-y: auto;
+  flex: 1;
+}
+
+.admin-modal-footer {
+  padding: 1.25rem;
+  border-top: 1px solid var(--border-subtle);
+  display: flex;
+  justify-content: flex-end;
+  gap: 0.75rem;
+}
+
+/* Admin Multi-select Check List */
+.admin-user-checkbox-list {
+  max-height: 150px;
+  overflow-y: auto;
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-md);
+  padding: 0.5rem;
+  background: rgba(0, 0, 0, 0.2);
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.admin-user-checkbox-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 6px;
+  border-radius: 4px;
+  cursor: pointer;
+  user-select: none;
+}
+
+.admin-user-checkbox-row:hover {
+  background: rgba(255, 255, 255, 0.05);
+}
+
+.admin-user-checkbox-row input {
+  cursor: pointer;
+}
+
+.admin-song-picker-list {
+  max-height: 200px;
+  overflow-y: auto;
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-md);
+  padding: 0.5rem;
+  background: rgba(0, 0, 0, 0.2);
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+
+
+
+/* ── Admin Form Styles ── */
+.admin-input, .admin-select, .admin-textarea {
+  width: 100%;
+  padding: 0.8rem;
+  background: var(--bg-secondary);
+  border: 1px solid var(--border-secondary);
+  border-radius: var(--radius-md);
+  color: var(--text-primary);
+  font-family: var(--font-body);
+  margin-top: 0.4rem;
+  margin-bottom: 1rem;
+}
+.admin-input:focus, .admin-select:focus, .admin-textarea:focus {
+  outline: none;
+  border-color: var(--spidey-red);
+  box-shadow: var(--shadow-glow-red);
+}
+.admin-checkbox-list {
+  background: var(--bg-secondary);
+  border: 1px solid var(--border-secondary);
+  border-radius: var(--radius-md);
+  padding: 0.5rem;
+  max-height: 200px;
+  overflow-y: auto;
+  margin-bottom: 1rem;
+}
+.admin-checkbox-item {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.5rem;
+  border-radius: var(--radius-sm);
+  transition: var(--transition-fast);
+}
+.admin-checkbox-item:hover {
+  background: var(--bg-card-hover);
+}
+.admin-checkbox-item input {
+  accent-color: var(--spidey-red);
+}
+.admin-color-picker {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  margin-bottom: 1rem;
+}
+.admin-color-picker input[type="color"] {
+  width: 40px;
+  height: 40px;
+  border: none;
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  background: none;
 }

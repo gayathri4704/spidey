@@ -13,6 +13,7 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { useAuth }   from '../context/AuthContext';
 import { usePlayer } from '../context/PlayerContext';
+import { useTheme }  from '../context/ThemeContext';
 import { supabase }  from '../lib/supabaseClient';
 import { formatDate } from '../utils/helpers';
 import '../styles/dashboard.css';
@@ -1364,6 +1365,7 @@ function CreateTab({ onUploaded, mySongs, search, favoriteIds, onFavToggle, onDe
 
 function ProfileTab({ totalSongs, favCount, myUploadsCount }) {
   const { user, logout } = useAuth();
+  const { themes, currentThemeId, changeTheme } = useTheme();
   const joinDate = user?.createdAt ? formatDate(user.createdAt, { year: 'numeric', month: 'short', day: 'numeric' }) : '—';
 
   return (
@@ -1384,6 +1386,34 @@ function ProfileTab({ totalSongs, favCount, myUploadsCount }) {
         </div>
       </div>
       
+      <div className="dash-section">
+        <h2 className="dash-section-title">🎨 Appearance</h2>
+        <div style={{ display: 'grid', gap: '1rem', gridTemplateColumns: 'repeat(auto-fill, minmax(150px, 1fr))' }}>
+          {themes.map(t => (
+            <div 
+              key={t.id} 
+              onClick={() => changeTheme(t.id)}
+              style={{
+                background: t.bg_card,
+                border: `2px solid ${currentThemeId === t.id ? t.primary_color : t.border_secondary}`,
+                borderRadius: '8px',
+                padding: '1rem',
+                cursor: 'pointer',
+                textAlign: 'center',
+                transition: 'all 0.2s'
+              }}
+            >
+              <div style={{ display: 'flex', justifyContent: 'center', gap: '0.5rem', marginBottom: '0.5rem' }}>
+                <div style={{ width: 24, height: 24, background: t.primary_color, borderRadius: '50%' }}></div>
+                <div style={{ width: 24, height: 24, background: t.secondary_color, borderRadius: '50%' }}></div>
+              </div>
+              <p style={{ color: t.text_primary, fontWeight: currentThemeId === t.id ? 'bold' : 'normal', margin: 0 }}>{t.name}</p>
+            </div>
+          ))}
+          {themes.length === 0 && <p className="text-muted">No themes available.</p>}
+        </div>
+      </div>
+
       <div className="dash-section">
         <h2 className="dash-section-title">⚙️ Settings</h2>
         <div style={{ display: 'grid', gap: '1rem' }}>
