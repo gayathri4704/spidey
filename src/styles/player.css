@@ -150,12 +150,11 @@ body:not(.has-player) .user-layout-with-nav .dashboard-body {
   position: fixed;
   inset: 0;
   height: 100dvh;
-  min-height: 100vh;
   z-index: 1000;
-  background: linear-gradient(180deg, var(--spidey-red-dark) 0%, var(--bg-primary) 100%);
+  background: linear-gradient(180deg, var(--bg-card) 0%, var(--bg-primary) 100%);
   display: flex;
   flex-direction: column;
-  padding: var(--space-xl);
+  padding: calc(env(safe-area-inset-top) + 18px) 22px calc(env(safe-area-inset-bottom) + 18px);
   transform: translateY(100%);
   opacity: 0;
   transition: transform 0.4s cubic-bezier(0.4, 0, 0.2, 1), opacity 0.4s ease;
@@ -238,8 +237,8 @@ body:not(.has-player) .user-layout-with-nav .dashboard-body {
   margin-bottom: var(--space-2xl);
 }
 .full-album-placeholder {
-  width: 100%;
-  max-width: 350px;
+  width: min(72vw, 300px);
+  max-width: 300px;
   aspect-ratio: 1 / 1;
   background: var(--bg-card);
   border-radius: var(--radius-lg);
@@ -250,7 +249,7 @@ body:not(.has-player) .user-layout-with-nav .dashboard-body {
   font-size: 7rem;
   border: 1px solid var(--border-subtle);
   transition: transform 0.3s ease;
-  margin: 0 auto;
+  margin: 28px auto 24px;
 }
 .full-album-placeholder.pulse {
   animation: slowPulse 4s ease-in-out infinite;
@@ -263,7 +262,7 @@ body:not(.has-player) .user-layout-with-nav .dashboard-body {
 }
 
 .full-song-info {
-  margin-bottom: var(--space-xl);
+  margin-bottom: 18px;
 }
 .full-title-row {
   display: flex;
@@ -292,7 +291,7 @@ body:not(.has-player) .user-layout-with-nav .dashboard-body {
 }
 
 .full-progress-container {
-  margin-bottom: var(--space-xl);
+  margin: 12px 0 24px;
   width: 100%;
   max-width: 100%;
 }
@@ -308,7 +307,8 @@ body:not(.has-player) .user-layout-with-nav .dashboard-body {
   align-items: center;
   justify-content: center;
   gap: var(--space-lg);
-  margin-bottom: var(--space-xl);
+  margin-top: 6px;
+  margin-bottom: 0;
   width: 100%;
 }
 
@@ -387,44 +387,45 @@ body:not(.has-player) .user-layout-with-nav .dashboard-body {
   width: 100%;
   -webkit-appearance: none;
   appearance: none;
-  height: 4px;
+  height: 6px;
   border-radius: var(--radius-full);
-  background: rgba(255, 255, 255, 0.2);
+  background: rgba(255, 255, 255, 0.15); /* Light gray visible track */
   outline: none;
   cursor: pointer;
   transition: height var(--transition-fast);
 }
-.player-seek:hover { height: 6px; }
+.player-seek:hover { height: 8px; }
 .player-seek {
   background: linear-gradient(
     to right,
-    var(--text-primary) 0%,
-    var(--text-primary) var(--seek-pct, 0%),
-    rgba(255, 255, 255, 0.2) var(--seek-pct, 0%),
-    rgba(255, 255, 255, 0.2) 100%
+    var(--primary-color) 0%,
+    var(--primary-color) var(--seek-pct, 0%),
+    rgba(255, 255, 255, 0.15) var(--seek-pct, 0%),
+    rgba(255, 255, 255, 0.15) 100%
   );
 }
 .player-seek::-webkit-slider-thumb {
   -webkit-appearance: none;
-  width: 12px;
-  height: 12px;
+  width: 14px;
+  height: 14px;
   border-radius: 50%;
   background: var(--text-primary);
   cursor: pointer;
-  opacity: 0;
-  transition: opacity 0.2s, transform 0.2s;
+  opacity: 1; /* Always visible on mobile */
+  transition: transform 0.2s;
+  box-shadow: 0 2px 5px rgba(0,0,0,0.5);
 }
 .player-seek:hover::-webkit-slider-thumb {
-  opacity: 1;
   transform: scale(1.2);
 }
 .player-seek::-moz-range-thumb {
-  width: 12px;
-  height: 12px;
+  width: 14px;
+  height: 14px;
   border-radius: 50%;
   background: var(--text-primary);
   border: none;
-  opacity: 0;
+  opacity: 1;
+  box-shadow: 0 2px 5px rgba(0,0,0,0.5);
 }
 .player-seek:hover::-moz-range-thumb { opacity: 1; }
 

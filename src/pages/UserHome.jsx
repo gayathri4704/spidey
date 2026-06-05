@@ -1240,33 +1240,11 @@ function ConnectTab() {
   );
 }
 
-function LibraryTab({ favorites, mySongs, search, favoriteIds, onFavToggle }) {
+function LibraryTab({ favorites, mySongs, search, favoriteIds, onFavToggle, onUploaded, onDelete, deletingId }) {
   const favFiltered = favorites.filter(s => s.title.toLowerCase().includes(search.toLowerCase()) || s.artist.toLowerCase().includes(search.toLowerCase()));
   const myFiltered = mySongs.filter(s => s.title.toLowerCase().includes(search.toLowerCase()) || s.artist.toLowerCase().includes(search.toLowerCase()));
 
-  return (
-    <div className="tab-pane active" aria-labelledby="tab-library">
-      <div className="dash-section">
-        <h2 className="dash-section-title">⭐ Favorites</h2>
-        {favFiltered.length === 0 ? <p className="text-muted">No favorites yet.</p> : (
-          <div className="song-list">
-            {favFiltered.map(song => <SongRow key={song.id} song={song} queue={favorites} favoriteIds={favoriteIds} onFavToggle={onFavToggle} />)}
-          </div>
-        )}
-      </div>
-      <div className="dash-section">
-        <h2 className="dash-section-title">🕷️ My Uploads</h2>
-        {myFiltered.length === 0 ? <p className="text-muted">No uploads yet.</p> : (
-          <div className="song-list">
-            {myFiltered.map(song => <SongRow key={song.id} song={song} queue={mySongs} favoriteIds={favoriteIds} onFavToggle={onFavToggle} />)}
-          </div>
-        )}
-      </div>
-    </div>
-  );
-}
-
-function CreateTab({ onUploaded, mySongs, search, favoriteIds, onFavToggle, onDelete, deletingId }) {
+  // ── Upload state ──
   const { user } = useAuth();
   const [title, setTitle] = useState('');
   const [artist, setArtist] = useState('');
@@ -1309,19 +1287,25 @@ function CreateTab({ onUploaded, mySongs, search, favoriteIds, onFavToggle, onDe
         mime_type:    file.type,
         file_size:    file.size,
         is_public:    false,
-        // file_url intentionally omitted – bucket is private, signed URLs used at play-time
       }).select().single();
       if (insErr) { await supabase.storage.from(BUCKET).remove([filePath]); throw insErr; }
 
       setStatus('success'); setTitle(''); setArtist(''); setFile(null); if (fileInputRef.current) fileInputRef.current.value = '';
-      onUploaded(newSong);
+      if(onUploaded) onUploaded(newSong);
     } catch (err) { setErrorMsg(err.message); setStatus('error'); }
   };
 
-  const myFiltered = mySongs.filter(s => s.title.toLowerCase().includes(search.toLowerCase()) || s.artist.toLowerCase().includes(search.toLowerCase()));
-
   return (
-    <div className="tab-pane active" aria-labelledby="tab-create">
+    <div className="tab-pane active" aria-labelledby="tab-library">
+      <div className="dash-section">
+        <h2 className="dash-section-title">⭐ Favorites</h2>
+        {favFiltered.length === 0 ? <p className="text-muted">No favorites yet.</p> : (
+          <div className="song-list">
+            {favFiltered.map(song => <SongRow key={song.id} song={song} queue={favorites} favoriteIds={favoriteIds} onFavToggle={onFavToggle} />)}
+          </div>
+        )}
+      </div>
+
       <div className="dash-section">
         <h2 className="dash-section-title">⬆️ Upload Song</h2>
         <div className="upload-form">
@@ -1340,14 +1324,202 @@ function CreateTab({ onUploaded, mySongs, search, favoriteIds, onFavToggle, onDe
           </button>
         </div>
       </div>
+
       <div className="dash-section">
-        <h2 className="dash-section-title">⚙️ Manage My Songs</h2>
-        {myFiltered.length === 0 ? <p className="text-muted">No uploads to manage.</p> : (
+        <h2 className="dash-section-title">🕷️ My Uploads</h2>
+        {myFiltered.length === 0 ? <p className="text-muted">No uploads yet.</p> : (
           <div className="song-list">
-            {myFiltered.map(song => (
-              <SongRow key={song.id} song={song} queue={mySongs} favoriteIds={favoriteIds} onFavToggle={onFavToggle} onDelete={onDelete} isDeleting={deletingId === song.id} showDelete={true} />
-            ))}
+            {myFiltered.map(song => <SongRow key={song.id} song={song} queue={mySongs} favoriteIds={favoriteIds} onFavToggle={onFavToggle} onDelete={onDelete} isDeleting={deletingId === song.id} showDelete={true} />)}
           </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function ChatTab() {
+  const { user } = useAuth();
+  const [friends, setFriends] = useState([]);
+  const [isLoadingFriends, setIsLoadingFriends] = useState(true);
+  
+  const [selectedFriend, setSelectedFriend] = useState(null);
+  const [messages, setMessages] = useState([]);
+  const [newMessage, setNewMessage] = useState('');
+  const [isLoadingMessages, setIsLoadingMessages] = useState(false);
+  const messagesEndRef = useRef(null);
+
+  // Fetch Friends
+  useEffect(() => {
+    const fetchFriends = async () => {
+      setIsLoadingFriends(true);
+      try {
+        const { data: friendRows, error } = await supabase
+          .from('friends')
+          .select('friend_id')
+          .eq('user_id', user.id);
+        if (error) throw error;
+        if (friendRows && friendRows.length > 0) {
+          const uniqueIds = [...new Set(friendRows.map(f => f.friend_id))];
+          const { data: profiles, error: profErr } = await supabase
+            .from('profiles')
+            .select('id, username, display_name')
+            .in('id', uniqueIds);
+          if (profErr) throw profErr;
+          setFriends(profiles || []);
+        } else {
+          setFriends([]);
+        }
+      } catch (err) {
+        console.error('Error fetching friends:', err);
+      } finally {
+        setIsLoadingFriends(false);
+      }
+    };
+    fetchFriends();
+  }, [user.id]);
+
+  // Fetch Messages when a friend is selected
+  useEffect(() => {
+    if (!selectedFriend) return;
+    
+    const fetchMessages = async () => {
+      setIsLoadingMessages(true);
+      try {
+        const { data, error } = await supabase
+          .from('chat_messages')
+          .select('*')
+          .or(`and(sender_id.eq.${user.id},receiver_id.eq.${selectedFriend.id}),and(sender_id.eq.${selectedFriend.id},receiver_id.eq.${user.id})`)
+          .order('created_at', { ascending: true });
+        
+        if (error) throw error;
+        setMessages(data || []);
+      } catch (err) {
+        console.error('Error fetching messages:', err);
+      } finally {
+        setIsLoadingMessages(false);
+        messagesEndRef.current?.scrollIntoView();
+      }
+    };
+    fetchMessages();
+
+    // Subscribe to new messages
+    const channel = supabase.channel(`chat_${user.id}_${selectedFriend.id}`)
+      .on('postgres_changes', {
+        event: 'INSERT',
+        schema: 'public',
+        table: 'chat_messages'
+      }, payload => {
+        const msg = payload.new;
+        if ((msg.sender_id === user.id && msg.receiver_id === selectedFriend.id) ||
+            (msg.sender_id === selectedFriend.id && msg.receiver_id === user.id)) {
+          setMessages(prev => [...prev, msg]);
+          messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+        }
+      })
+      .subscribe();
+
+    return () => { supabase.removeChannel(channel); };
+  }, [selectedFriend, user.id]);
+
+  const handleSendMessage = async (e) => {
+    e.preventDefault();
+    if (!newMessage.trim() || !selectedFriend) return;
+    
+    const msgText = newMessage.trim();
+    setNewMessage('');
+    
+    try {
+      const { error } = await supabase.from('chat_messages').insert({
+        sender_id: user.id,
+        receiver_id: selectedFriend.id,
+        message: msgText
+      });
+      if (error) throw error;
+    } catch (err) {
+      console.error('Error sending message:', err);
+    }
+  };
+
+  if (selectedFriend) {
+    return (
+      <div className="tab-pane active chat-screen" aria-labelledby="tab-chat">
+        <div className="chat-header">
+          <button className="chat-back-btn" onClick={() => setSelectedFriend(null)}>
+            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="15 18 9 12 15 6"></polyline></svg>
+          </button>
+          <div className="chat-avatar">👤</div>
+          <div className="chat-friend-info">
+            <h2 className="chat-friend-name">{selectedFriend.display_name || selectedFriend.username}</h2>
+            <span className="chat-friend-username">@{selectedFriend.username}</span>
+          </div>
+        </div>
+        
+        <div className="chat-messages">
+          {isLoadingMessages ? (
+            <p className="chat-empty">Loading messages...</p>
+          ) : messages.length === 0 ? (
+            <p className="chat-empty">Say hi to start the conversation!</p>
+          ) : (
+            messages.map(msg => {
+              const isMine = msg.sender_id === user.id;
+              const time = new Date(msg.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+              return (
+                <div key={msg.id} className={`msg-row ${isMine ? 'mine' : 'theirs'}`}>
+                  <div className="msg-bubble">
+                    {msg.message}
+                    <span className="msg-time">{time}</span>
+                  </div>
+                </div>
+              );
+            })
+          )}
+          <div ref={messagesEndRef} />
+        </div>
+
+        <form className="chat-input-area" onSubmit={handleSendMessage}>
+          <button type="button" className="chat-icon-btn">😊</button>
+          <button type="button" className="chat-icon-btn">📎</button>
+          <input 
+            type="text" 
+            className="chat-input" 
+            placeholder="Type a message..." 
+            value={newMessage} 
+            onChange={(e) => setNewMessage(e.target.value)} 
+          />
+          <button type="submit" className="chat-send-btn" disabled={!newMessage.trim()}>
+            <svg width="24" height="24" viewBox="0 0 24 24" fill="currentColor"><path d="M2.01 21L23 12 2.01 3 2 10l15 2-15 2z"/></svg>
+          </button>
+        </form>
+      </div>
+    );
+  }
+
+  return (
+    <div className="tab-pane active chat-container" aria-labelledby="tab-chat">
+      <div className="dashboard-welcome user-theme" style={{ marginBottom: '1rem' }}>
+        <h1 className="welcome-title">Messages</h1>
+        <p className="welcome-sub">Chat with your friends</p>
+      </div>
+      
+      <div className="chat-list-card">
+        {isLoadingFriends ? (
+          <p className="chat-empty">Loading friends...</p>
+        ) : friends.length === 0 ? (
+          <p className="chat-empty">You don't have any friends yet. Go to Connect to find some!</p>
+        ) : (
+          friends.map(friend => (
+            <div key={friend.id} className="chat-friend-item" onClick={() => setSelectedFriend(friend)}>
+              <div className="chat-avatar">👤</div>
+              <div className="chat-friend-info">
+                <div style={{ display: 'flex', alignItems: 'baseline', gap: '8px' }}>
+                  <p className="chat-friend-name">{friend.display_name || friend.username}</p>
+                  <p className="chat-friend-username">@{friend.username}</p>
+                </div>
+                <p className="chat-friend-preview">Tap to chat</p>
+              </div>
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="9 18 15 12 9 6"></polyline></svg>
+            </div>
+          ))
         )}
       </div>
     </div>
@@ -1497,8 +1669,8 @@ export default function UserHome() {
       <main className="dashboard-body" id="user-main" role="main">
         {activeTab === 'home'    && <HomeTab allSongs={allSongs} search={search} favoriteIds={favoriteIds} onFavToggle={handleFavToggle} />}
         {activeTab === 'connect' && <ConnectTab />}
-        {activeTab === 'library' && <LibraryTab favorites={favoriteSongs} mySongs={mySongs} search={search} favoriteIds={favoriteIds} onFavToggle={handleFavToggle} />}
-        {activeTab === 'create'  && <CreateTab onUploaded={s => setMySongs(p => [s,...p])} mySongs={mySongs} search={search} favoriteIds={favoriteIds} onFavToggle={handleFavToggle} onDelete={handleDelete} deletingId={deletingId} />}
+        {activeTab === 'library' && <LibraryTab favorites={favoriteSongs} mySongs={mySongs} search={search} favoriteIds={favoriteIds} onFavToggle={handleFavToggle} onUploaded={s => setMySongs(p => [s,...p])} onDelete={handleDelete} deletingId={deletingId} />}
+        {activeTab === 'chat'    && <ChatTab />}
         {activeTab === 'profile' && <ProfileTab totalSongs={allSongs.length} favCount={favoriteIds.length} myUploadsCount={mySongs.length} />}
       </main>
 
@@ -1513,8 +1685,8 @@ export default function UserHome() {
         <button className={`nav-item ${activeTab === 'library' ? 'active' : ''}`} onClick={() => setActiveTab('library')}>
           <span className="nav-icon">📚</span><span className="nav-label">Library</span>
         </button>
-        <button className={`nav-item ${activeTab === 'create' ? 'active' : ''}`} onClick={() => setActiveTab('create')}>
-          <span className="nav-icon">➕</span><span className="nav-label">Create</span>
+        <button className={`nav-item ${activeTab === 'chat' ? 'active' : ''}`} onClick={() => setActiveTab('chat')}>
+          <span className="nav-icon">💬</span><span className="nav-label">Chat</span>
         </button>
         <button className={`nav-item ${activeTab === 'profile' ? 'active' : ''}`} onClick={() => setActiveTab('profile')}>
           <span className="nav-icon">👤</span><span className="nav-label">Profile</span>
