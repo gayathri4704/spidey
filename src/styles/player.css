@@ -38,10 +38,10 @@
 
 /* Adjust dashboard body padding to account for bottom nav AND mini player */
 .has-player .dashboard-body {
-  padding-bottom: calc(65px + 60px + var(--space-xl)); 
+  padding-bottom: calc(65px + 70px + var(--space-2xl)); 
 }
 /* If no player is active but we are in UserHome, we just need padding for the bottom nav */
-body:not(.has-player) #user-main {
+body:not(.has-player) .user-layout-with-nav .dashboard-body {
   padding-bottom: calc(65px + var(--space-xl));
 }
 
@@ -175,6 +175,7 @@ body:not(.has-player) #user-main {
   justify-content: space-between;
   margin-bottom: var(--space-xl);
   flex-shrink: 0;
+  width: 100%;
 }
 
 .full-close-btn {
@@ -237,18 +238,19 @@ body:not(.has-player) #user-main {
   margin-bottom: var(--space-2xl);
 }
 .full-album-placeholder {
-  width: 75vw;
-  max-width: 320px;
+  width: 100%;
+  max-width: 350px;
   aspect-ratio: 1 / 1;
-  background: linear-gradient(135deg, rgba(192, 57, 43, 0.4), rgba(37, 99, 235, 0.4));
-  border-radius: var(--radius-xl);
-  box-shadow: 0 10px 40px rgba(0, 0, 0, 0.5);
+  background: var(--bg-card);
+  border-radius: var(--radius-lg);
+  box-shadow: 0 10px 40px rgba(0, 0, 0, 0.4);
   display: flex;
   align-items: center;
   justify-content: center;
-  font-size: 5rem;
-  border: 1px solid rgba(255, 255, 255, 0.1);
+  font-size: 7rem;
+  border: 1px solid var(--border-subtle);
   transition: transform 0.3s ease;
+  margin: 0 auto;
 }
 .full-album-placeholder.pulse {
   animation: slowPulse 4s ease-in-out infinite;
@@ -305,8 +307,9 @@ body:not(.has-player) #user-main {
   display: flex;
   align-items: center;
   justify-content: center;
-  gap: var(--space-2xl);
+  gap: var(--space-lg);
   margin-bottom: var(--space-xl);
+  width: 100%;
 }
 
 /* Base button styles used in full player */
@@ -345,13 +348,13 @@ body:not(.has-player) #user-main {
 .full-play-btn {
   width: 72px;
   height: 72px;
-  background: linear-gradient(135deg, var(--spidey-red-dark), var(--spidey-blue-dark));
-  color: var(--spidey-white);
-  box-shadow: 0 0 20px rgba(192, 57, 43, 0.3);
+  background: var(--text-primary);
+  color: var(--bg-primary);
+  box-shadow: 0 4px 15px rgba(0, 0, 0, 0.2);
 }
 .full-play-btn:hover:not(:disabled) {
   transform: scale(1.05);
-  box-shadow: 0 0 30px rgba(192, 57, 43, 0.5), 0 0 30px rgba(37, 99, 235, 0.5);
+  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.3);
 }
 .full-play-btn:active:not(:disabled) {
   transform: scale(0.95);
@@ -359,8 +362,8 @@ body:not(.has-player) #user-main {
 .full-play-btn .player-spin {
   width: 24px;
   height: 24px;
-  border-color: rgba(255,255,255,0.2);
-  border-top-color: var(--spidey-white);
+  border-color: rgba(0,0,0,0.2);
+  border-top-color: var(--bg-primary);
 }
 
 .full-volume-container {

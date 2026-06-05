@@ -215,13 +215,15 @@ export default function MusicPlayer({ isUserHome }) {
         {/* ── Song info ── */}
         <div className="full-song-info">
           <div className="full-title-row">
-            <div style={{ minWidth: 0 }}>
+            <div style={{ minWidth: 0, flex: 1, textAlign: 'left' }}>
               <h2 className="full-title">{currentSong.title}</h2>
-              <p className="full-artist">{currentSong.artist}</p>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginTop: '0.25rem' }}>
+                <p className="full-artist" style={{ margin: 0 }}>{currentSong.artist}</p>
+                {isAdminSong
+                  ? <span className="badge badge-red full-badge" style={{ margin: 0 }}>🛡️ admin</span>
+                  : <span className="badge badge-blue full-badge" style={{ margin: 0 }}>🕷️ user</span>}
+              </div>
             </div>
-            {isAdminSong
-              ? <span className="badge badge-red full-badge">🛡️ admin</span>
-              : <span className="badge badge-blue full-badge">🕷️ user</span>}
           </div>
         </div>
 

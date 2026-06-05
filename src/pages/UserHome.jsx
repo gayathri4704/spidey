@@ -1119,31 +1119,24 @@ function ConnectTab() {
             </div>
 
             {/* Room code */}
-            <div style={{
-              background: 'rgba(0,0,0,0.3)',
-              borderRadius: 'var(--radius-md)',
-              padding: '0.75rem 1rem',
-              marginBottom: '1rem',
-              display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '0.75rem', flexWrap: 'wrap',
-            }}>
-              <div>
-                <p style={{ margin: 0, fontSize: '0.7rem', color: 'var(--text-muted)', letterSpacing: '0.08em', textTransform: 'uppercase' }}>Room Code</p>
-                <p style={{ margin: 0, fontFamily: 'var(--font-mono)', fontSize: '1rem', color: 'var(--spidey-white)', letterSpacing: '0.15em' }}>
+            <div className="room-card-header">
+              <div className="room-code-section">
+                <p className="room-code-label">Room Code</p>
+                <p className="room-code-value">
                   {activeRoom.id.slice(0, 8).toUpperCase()}
                 </p>
               </div>
               <button
                 id="copy-room-code-btn"
-                className="song-action-btn"
+                className="song-action-btn room-copy-btn"
                 onClick={() => handleCopyCode(activeRoom.id.slice(0, 8).toUpperCase())}
-                style={{ minWidth: '110px' }}
               >
                 {copiedCode ? '✅ Copied!' : '📋 Copy Code'}
               </button>
             </div>
 
             {/* Room actions */}
-            <div style={{ display: 'flex', gap: '0.75rem', flexWrap: 'wrap' }}>
+            <div className="room-action-buttons">
               <button
                 id="invite-friend-room-btn"
                 className="song-action-btn"
@@ -1152,7 +1145,6 @@ function ConnectTab() {
                   setMessage({ text: 'Room code copied! Share it with a friend.', type: 'success' });
                   setTimeout(() => setMessage({ text: '', type: '' }), 3000);
                 }}
-                style={{ flex: '1 1 auto' }}
               >
                 👥 Invite Friend
               </button>
@@ -1161,7 +1153,6 @@ function ConnectTab() {
                 className="song-action-btn song-action-btn--danger"
                 onClick={handleLeaveRoom}
                 disabled={isLeavingRoom}
-                style={{ flex: '1 1 auto' }}
               >
                 {isLeavingRoom ? '⏳ Leaving…' : '🚪 Leave Room'}
               </button>
