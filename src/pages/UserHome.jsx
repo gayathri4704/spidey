@@ -1346,6 +1346,7 @@ function ChatTab() {
   const [messages, setMessages] = useState([]);
   const [newMessage, setNewMessage] = useState('');
   const [isLoadingMessages, setIsLoadingMessages] = useState(false);
+  const [chatSearch, setChatSearch] = useState('');
   const messagesEndRef = useRef(null);
 
   // Fetch Friends
@@ -1440,34 +1441,42 @@ function ChatTab() {
     }
   };
 
+  const filteredFriends = friends.filter(f => 
+    (f.display_name || '').toLowerCase().includes(chatSearch.toLowerCase()) || 
+    (f.username || '').toLowerCase().includes(chatSearch.toLowerCase())
+  );
+
   if (selectedFriend) {
     return (
-      <div className="tab-pane active chat-screen" aria-labelledby="tab-chat">
-        <div className="chat-header">
+      <div className="chat-conversation" aria-labelledby="tab-chat">
+        <div className="chat-conversation-header">
           <button className="chat-back-btn" onClick={() => setSelectedFriend(null)}>
             <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="15 18 9 12 15 6"></polyline></svg>
           </button>
-          <div className="chat-avatar">👤</div>
-          <div className="chat-friend-info">
-            <h2 className="chat-friend-name">{selectedFriend.display_name || selectedFriend.username}</h2>
-            <span className="chat-friend-username">@{selectedFriend.username}</span>
+          <div className="chat-header-avatar">👤</div>
+          <div className="chat-header-info">
+            <h2 className="chat-thread-name">{selectedFriend.display_name || selectedFriend.username}</h2>
+            <span className="chat-thread-username">@{selectedFriend.username}</span>
+          </div>
+          <div className="chat-header-actions">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72 12.84 12.84 0 0 0 .7 2.81 2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45 12.84 12.84 0 0 0 2.81.7A2 2 0 0 1 22 16.92z"></path></svg>
           </div>
         </div>
         
-        <div className="chat-messages">
+        <div className="chat-messages-area">
           {isLoadingMessages ? (
-            <p className="chat-empty">Loading messages...</p>
+            <p className="chat-empty-state">Loading messages...</p>
           ) : messages.length === 0 ? (
-            <p className="chat-empty">Say hi to start the conversation!</p>
+            <p className="chat-empty-state">Say hi to start the conversation!</p>
           ) : (
             messages.map(msg => {
               const isMine = msg.sender_id === user.id;
               const time = new Date(msg.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
               return (
-                <div key={msg.id} className={`msg-row ${isMine ? 'mine' : 'theirs'}`}>
-                  <div className="msg-bubble">
+                <div key={msg.id} className={`message-row ${isMine ? 'mine' : 'theirs'}`}>
+                  <div className="message-bubble">
                     {msg.message}
-                    <span className="msg-time">{time}</span>
+                    <span className="message-time">{time}</span>
                   </div>
                 </div>
               );
@@ -1476,18 +1485,18 @@ function ChatTab() {
           <div ref={messagesEndRef} />
         </div>
 
-        <form className="chat-input-area" onSubmit={handleSendMessage}>
+        <form className="chat-composer" onSubmit={handleSendMessage}>
           <button type="button" className="chat-icon-btn">😊</button>
           <button type="button" className="chat-icon-btn">📎</button>
           <input 
             type="text" 
-            className="chat-input" 
+            className="chat-text-input" 
             placeholder="Type a message..." 
             value={newMessage} 
             onChange={(e) => setNewMessage(e.target.value)} 
           />
           <button type="submit" className="chat-send-btn" disabled={!newMessage.trim()}>
-            <svg width="24" height="24" viewBox="0 0 24 24" fill="currentColor"><path d="M2.01 21L23 12 2.01 3 2 10l15 2-15 2z"/></svg>
+            ➤
           </button>
         </form>
       </div>
@@ -1495,32 +1504,44 @@ function ChatTab() {
   }
 
   return (
-    <div className="tab-pane active chat-container" aria-labelledby="tab-chat">
-      <div className="dashboard-welcome user-theme" style={{ marginBottom: '1rem' }}>
-        <h1 className="welcome-title">Messages</h1>
-        <p className="welcome-sub">Chat with your friends</p>
-      </div>
-      
-      <div className="chat-list-card">
-        {isLoadingFriends ? (
-          <p className="chat-empty">Loading friends...</p>
-        ) : friends.length === 0 ? (
-          <p className="chat-empty">You don't have any friends yet. Go to Connect to find some!</p>
-        ) : (
-          friends.map(friend => (
-            <div key={friend.id} className="chat-friend-item" onClick={() => setSelectedFriend(friend)}>
-              <div className="chat-avatar">👤</div>
-              <div className="chat-friend-info">
-                <div style={{ display: 'flex', alignItems: 'baseline', gap: '8px' }}>
-                  <p className="chat-friend-name">{friend.display_name || friend.username}</p>
-                  <p className="chat-friend-username">@{friend.username}</p>
+    <div className="chat-app" aria-labelledby="tab-chat">
+      <div className="chat-list-screen">
+        <div className="chat-list-header">
+          <div>
+            <h1 className="welcome-title" style={{ fontSize: '1.8rem', marginBottom: '4px' }}>Messages</h1>
+            <p className="welcome-sub" style={{ margin: 0 }}>Chat with your friends</p>
+          </div>
+          <div className="chat-search">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line></svg>
+            <input 
+              type="text" 
+              placeholder="Search friends..." 
+              value={chatSearch}
+              onChange={(e) => setChatSearch(e.target.value)}
+            />
+          </div>
+        </div>
+        
+        <div className="chat-thread-list">
+          {isLoadingFriends ? (
+            <p className="chat-empty">Loading friends...</p>
+          ) : filteredFriends.length === 0 ? (
+            <p className="chat-empty">No friends found.</p>
+          ) : (
+            filteredFriends.map(friend => (
+              <div key={friend.id} className="chat-thread-item" onClick={() => setSelectedFriend(friend)}>
+                <div className="chat-avatar">👤</div>
+                <div className="chat-thread-main">
+                  <div className="chat-thread-name">{friend.display_name || friend.username}</div>
+                  <div className="chat-thread-preview">Tap to chat</div>
                 </div>
-                <p className="chat-friend-preview">Tap to chat</p>
+                <div className="chat-thread-meta">
+                  <span className="chat-thread-username">@{friend.username}</span>
+                </div>
               </div>
-              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="9 18 15 12 9 6"></polyline></svg>
-            </div>
-          ))
-        )}
+            ))
+          )}
+        </div>
       </div>
     </div>
   );
