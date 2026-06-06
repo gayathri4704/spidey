@@ -1944,3 +1944,170 @@
   background: var(--bg-secondary);
   box-shadow: none;
 }
+
+/* =========================================
+   Chat Header & Actions
+   ========================================= */
+
+.chat-header-icon {
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  color: var(--text-primary);
+  font-size: 1.1rem;
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: background var(--transition-fast), transform var(--transition-fast);
+}
+
+.chat-header-icon:hover {
+  background: rgba(255, 255, 255, 0.15);
+  transform: scale(1.05);
+}
+
+/* =========================================
+   Emoji Picker & Attachment Preview
+   ========================================= */
+
+.emoji-picker-container {
+  position: absolute;
+  bottom: calc(100% + 10px);
+  left: 10px;
+  z-index: 1000;
+  box-shadow: 0 10px 40px rgba(0,0,0,0.5);
+  border-radius: var(--radius-lg);
+  overflow: hidden;
+}
+
+/* Ensure emoji picker fits on mobile screens */
+.emoji-picker-react {
+  max-width: 100vw;
+  max-height: 40vh;
+}
+
+.attachment-preview {
+  position: absolute;
+  bottom: calc(100% + 10px);
+  left: 10px;
+  background: var(--bg-card);
+  border: 1px solid var(--primary-color);
+  border-radius: 20px;
+  padding: 8px 16px;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  z-index: 900;
+  box-shadow: 0 4px 15px rgba(0,0,0,0.3);
+}
+
+.attachment-name {
+  font-size: 0.85rem;
+  color: var(--text-primary);
+  max-width: 200px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.attachment-preview button {
+  background: none;
+  border: none;
+  color: var(--spidey-red-light);
+  cursor: pointer;
+  font-size: 1rem;
+}
+
+/* =========================================
+   WebRTC Call Modals
+   ========================================= */
+
+.call-overlay {
+  position: absolute;
+  inset: 0;
+  background: rgba(10, 12, 20, 0.85);
+  backdrop-filter: blur(10px);
+  z-index: 2000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  animation: fadeIn 0.3s ease;
+}
+
+.active-call-overlay {
+  background: var(--bg-primary); /* Fully opaque for active call */
+}
+
+.call-modal {
+  background: var(--bg-card);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-lg);
+  padding: var(--space-xl);
+  text-align: center;
+  box-shadow: 0 10px 40px rgba(0,0,0,0.5);
+  width: 90%;
+  max-width: 400px;
+}
+
+.call-modal h3 {
+  font-family: var(--font-display);
+  font-size: 1.5rem;
+  margin-bottom: 8px;
+  color: var(--text-primary);
+  text-transform: capitalize;
+}
+
+.call-modal p {
+  color: var(--text-muted);
+  margin-bottom: var(--space-xl);
+}
+
+.call-actions {
+  display: flex;
+  gap: var(--space-md);
+  justify-content: center;
+}
+
+.btn-accept, .btn-reject {
+  padding: 12px 24px;
+  border: none;
+  border-radius: var(--radius-full);
+  font-family: var(--font-heading);
+  font-size: 1rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: transform var(--transition-fast);
+}
+
+.btn-accept {
+  background: #27ae60;
+  color: white;
+  box-shadow: 0 4px 15px rgba(39, 174, 96, 0.3);
+}
+
+.btn-reject {
+  background: var(--spidey-red);
+  color: white;
+  box-shadow: 0 4px 15px rgba(192, 57, 43, 0.3);
+}
+
+.btn-accept:active, .btn-reject:active {
+  transform: scale(0.95);
+}
+
+.video-placeholder {
+  width: 100%;
+  aspect-ratio: 3/4;
+  background: linear-gradient(135deg, rgba(192, 57, 43, 0.1), rgba(37, 99, 235, 0.1));
+  border: 1px dashed var(--border-subtle);
+  border-radius: var(--radius-md);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--text-muted);
+  margin-bottom: var(--space-xl);
+  font-size: 1.2rem;
+}

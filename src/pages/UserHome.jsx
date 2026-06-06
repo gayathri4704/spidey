@@ -16,6 +16,7 @@ import { usePlayer } from '../context/PlayerContext';
 import { useTheme }  from '../context/ThemeContext';
 import { supabase }  from '../lib/supabaseClient';
 import { formatDate } from '../utils/helpers';
+import EmojiPicker from 'emoji-picker-react';
 import '../styles/dashboard.css';
 
 const BUCKET = 'spidey';
@@ -1349,6 +1350,119 @@ function ChatTab() {
   const [chatSearch, setChatSearch] = useState('');
   const messagesEndRef = useRef(null);
 
+  const { joinRoomChannel } = usePlayer();
+  
+  // Emoji & Attach State
+  const [showEmojiPicker, setShowEmojiPicker] = useState(false);
+  const [selectedFile, setSelectedFile] = useState(null);
+  const fileInputRef = useRef(null);
+
+  // Call State
+  const [incomingCall, setIncomingCall] = useState(null);
+  const [activeCall, setActiveCall] = useState(null);
+
+  // WebRTC Signaling setup
+  useEffect(() => {
+    const channel = supabase.channel('signaling_channel');
+    
+    channel.on('broadcast', { event: 'call-offer' }, ({ payload }) => {
+      if (payload.targetUserId === user.id) setIncomingCall(payload);
+    });
+    
+    channel.on('broadcast', { event: 'call-answer' }, ({ payload }) => {
+      if (payload.targetUserId === user.id) setActiveCall(payload);
+    });
+
+    channel.on('broadcast', { event: 'call-ended' }, ({ payload }) => {
+      if (payload.targetUserId === user.id || payload.callerId === user.id) {
+        setIncomingCall(null);
+        setActiveCall(null);
+      }
+    });
+    
+    channel.on('broadcast', { event: 'call-rejected' }, ({ payload }) => {
+      if (payload.targetUserId === user.id || payload.callerId === user.id) {
+        setIncomingCall(null);
+        setActiveCall(null);
+      }
+    });
+
+    channel.subscribe();
+    return () => { supabase.removeChannel(channel); };
+  }, [user.id]);
+
+  const handleListenTogetherInvite = async () => {
+    if (!selectedFriend) return;
+    const roomId = `room_${Date.now()}`;
+    joinRoomChannel(roomId, true);
+    
+    const msgText = `I started a Listen Together room! Tap to join: ${roomId}`;
+    try {
+      await supabase.from('chat_messages').insert({
+        sender_id: user.id,
+        receiver_id: selectedFriend.id,
+        message: msgText
+      });
+    } catch (err) { console.error(err); }
+  };
+
+  const startCall = (type) => {
+    if (!selectedFriend) return;
+    const callData = {
+      callerId: user.id,
+      callerName: user.user_metadata?.display_name || user.email?.split('@')[0] || 'User',
+      targetUserId: selectedFriend.id,
+      callType: type
+    };
+    setActiveCall({ ...callData, status: 'calling' });
+    supabase.channel('signaling_channel').send({
+      type: 'broadcast',
+      event: 'call-offer',
+      payload: callData
+    });
+  };
+
+  const acceptCall = () => {
+    if (!incomingCall) return;
+    setActiveCall({ ...incomingCall, status: 'connected' });
+    supabase.channel('signaling_channel').send({
+      type: 'broadcast',
+      event: 'call-answer',
+      payload: { ...incomingCall, targetUserId: incomingCall.callerId }
+    });
+    setIncomingCall(null);
+  };
+
+  const rejectCall = () => {
+    if (!incomingCall) return;
+    supabase.channel('signaling_channel').send({
+      type: 'broadcast',
+      event: 'call-rejected',
+      payload: { ...incomingCall, targetUserId: incomingCall.callerId }
+    });
+    setIncomingCall(null);
+  };
+
+  const endCall = () => {
+    if (!activeCall) return;
+    supabase.channel('signaling_channel').send({
+      type: 'broadcast',
+      event: 'call-ended',
+      payload: { ...activeCall, targetUserId: activeCall.callerId === user.id ? activeCall.targetUserId : activeCall.callerId }
+    });
+    setActiveCall(null);
+  };
+
+  const onEmojiClick = (emojiObj) => {
+    setNewMessage(prev => prev + emojiObj.emoji);
+  };
+
+  const handleFileChange = (e) => {
+    if (e.target.files && e.target.files[0]) {
+      setSelectedFile(e.target.files[0]);
+    }
+  };
+
   // Fetch Friends
   useEffect(() => {
     const fetchFriends = async () => {
@@ -1459,7 +1573,9 @@ function ChatTab() {
             <span className="chat-thread-username">@{selectedFriend.username}</span>
           </div>
           <div className="chat-header-actions">
-            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72 12.84 12.84 0 0 0 .7 2.81 2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45 12.84 12.84 0 0 0 2.81.7A2 2 0 0 1 22 16.92z"></path></svg>
+            <button className="chat-header-icon" onClick={handleListenTogetherInvite} title="Listen Together">🎧</button>
+            <button className="chat-header-icon" onClick={() => startCall('voice')} title="Voice Call">📞</button>
+            <button className="chat-header-icon" onClick={() => startCall('video')} title="Video Call">📹</button>
           </div>
         </div>
         
@@ -1485,20 +1601,61 @@ function ChatTab() {
           <div ref={messagesEndRef} />
         </div>
 
-        <form className="chat-composer" onSubmit={handleSendMessage}>
-          <button type="button" className="chat-icon-btn">😊</button>
-          <button type="button" className="chat-icon-btn">📎</button>
-          <input 
-            type="text" 
-            className="chat-text-input" 
-            placeholder="Type a message..." 
-            value={newMessage} 
-            onChange={(e) => setNewMessage(e.target.value)} 
-          />
-          <button type="submit" className="chat-send-btn" disabled={!newMessage.trim()}>
-            ➤
-          </button>
-        </form>
+        <div style={{ position: 'relative' }}>
+          {showEmojiPicker && (
+            <div className="emoji-picker-container">
+              <EmojiPicker onEmojiClick={onEmojiClick} theme="dark" />
+            </div>
+          )}
+          {selectedFile && (
+            <div className="attachment-preview">
+              <span className="attachment-name">{selectedFile.name}</span>
+              <button type="button" onClick={() => setSelectedFile(null)}>✖</button>
+            </div>
+          )}
+          <form className="chat-composer" onSubmit={handleSendMessage}>
+            <button type="button" className="chat-icon-btn" onClick={() => setShowEmojiPicker(!showEmojiPicker)}>😊</button>
+            <button type="button" className="chat-icon-btn" onClick={() => fileInputRef.current?.click()}>📎</button>
+            <input type="file" ref={fileInputRef} hidden accept="image/*,audio/*" onChange={handleFileChange} />
+            <input 
+              type="text" 
+              className="chat-text-input" 
+              placeholder="Type a message..." 
+              value={newMessage} 
+              onChange={(e) => setNewMessage(e.target.value)} 
+              onClick={() => setShowEmojiPicker(false)}
+            />
+            <button type="submit" className="chat-send-btn" disabled={!newMessage.trim() && !selectedFile}>
+              ➤
+            </button>
+          </form>
+        </div>
+
+        {incomingCall && incomingCall.status === 'calling' && (
+          <div className="call-overlay">
+            <div className="call-modal">
+              <h3>Incoming {incomingCall.callType} Call</h3>
+              <p>from {incomingCall.callerName}</p>
+              <div className="call-actions">
+                <button className="btn-accept" onClick={acceptCall}>Accept</button>
+                <button className="btn-reject" onClick={rejectCall}>Reject</button>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {activeCall && (
+          <div className="call-overlay active-call-overlay">
+            <div className="call-modal">
+              <h3>{activeCall.status === 'calling' ? 'Calling...' : 'Connected'}</h3>
+              <p>{activeCall.targetUserId === user.id ? activeCall.callerName : selectedFriend.display_name || selectedFriend.username}</p>
+              {activeCall.callType === 'video' && <div className="video-placeholder">📹 Video Area</div>}
+              <div className="call-actions">
+                <button className="btn-reject" onClick={endCall}>End Call</button>
+              </div>
+            </div>
+          </div>
+        )}
       </div>
     );
   }
