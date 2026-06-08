@@ -7,8 +7,8 @@
  *   • Song Management (search, filters, play inline, delete with storage file removal)
  *   • Playlist Management (search, view songs read-only, delete)
  *   • Shared Playlist Management (revoke shares)
- *   • Listening Room Monitoring (disband active rooms)
- * ──────────────────────────────────────────────────────
+ *   • Listening Room Monitoring (disband active rooms) 
+ *──────────────────────────────────────────────────────
  */
 
 import { useState, useEffect, useCallback } from 'react';
