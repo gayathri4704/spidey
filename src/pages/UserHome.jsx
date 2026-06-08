@@ -18,6 +18,7 @@ import { supabase }  from '../lib/supabaseClient';
 import { formatDate } from '../utils/helpers';
 import EmojiPicker from 'emoji-picker-react';
 import '../styles/dashboard.css';
+import { encryptMessage, decryptMessage, getPrivateKey, savePrivateKey, generateKeyPair, exportPublicKey, generateSafetyNumber } from '../utils/crypto';
 
 const BUCKET = 'spidey';
 
@@ -1338,7 +1339,7 @@ function LibraryTab({ favorites, mySongs, search, favoriteIds, onFavToggle, onUp
   );
 }
 
-function ChatTab({ startCall }) {
+function ChatTab({ startCall, privateKey, myPublicKey }) {
   const { user } = useAuth();
   const [friends, setFriends] = useState([]);
   const [isLoadingFriends, setIsLoadingFriends] = useState(true);
@@ -1349,6 +1350,12 @@ function ChatTab({ startCall }) {
   const [isLoadingMessages, setIsLoadingMessages] = useState(false);
   const [chatSearch, setChatSearch] = useState('');
   const messagesEndRef = useRef(null);
+  
+  const [selectedFriendPublicKey, setSelectedFriendPublicKey] = useState(null);
+  const pubKeyRef = useRef(null);
+  
+  const [safetyNumber, setSafetyNumber] = useState(null);
+  const [showSecurityModal, setShowSecurityModal] = useState(false);
 
   const { joinRoomChannel } = usePlayer();
   
@@ -1362,12 +1369,23 @@ function ChatTab({ startCall }) {
     const roomId = `room_${Date.now()}`;
     joinRoomChannel(roomId, true);
     
-    const msgText = `I started a Listen Together room! Tap to join: ${roomId}`;
+    let msgText = `I started a Listen Together room! Tap to join: ${roomId}`;
+    if (!privateKey || !selectedFriendPublicKey) {
+      alert("Encrypted chat is not ready. Please refresh or open this chat again.");
+      return;
+    }
+    
+    const encryptedMsgText = await encryptMessage(msgText, privateKey, selectedFriendPublicKey);
+    if (!encryptedMsgText || !encryptedMsgText.includes('{"v":1')) {
+      alert("Encrypted chat is not ready. Please refresh or open this chat again.");
+      return;
+    }
+    
     try {
       await supabase.from('chat_messages').insert({
         sender_id: user.id,
         receiver_id: selectedFriend.id,
-        message: msgText
+        message: encryptedMsgText
       });
     } catch (err) { console.error(err); }
   };
@@ -1416,9 +1434,22 @@ function ChatTab({ startCall }) {
   useEffect(() => {
     if (!selectedFriend) return;
     
-    const fetchMessages = async () => {
+    const fetchMessagesAndKey = async () => {
       setIsLoadingMessages(true);
       try {
+        let pubKey = null;
+        const { data: keyData } = await supabase.from('user_keys').select('public_key').eq('user_id', selectedFriend.id).maybeSingle();
+        if (keyData && keyData.public_key) {
+          pubKey = keyData.public_key;
+          setSelectedFriendPublicKey(pubKey);
+          pubKeyRef.current = pubKey;
+          
+          if (myPublicKey) {
+            const sn = await generateSafetyNumber(myPublicKey, pubKey);
+            setSafetyNumber(sn);
+          }
+        }
+
         const { data, error } = await supabase
           .from('chat_messages')
           .select('*')
@@ -1426,7 +1457,13 @@ function ChatTab({ startCall }) {
           .order('created_at', { ascending: true });
         
         if (error) throw error;
-        setMessages(data || []);
+        
+        const decryptedData = await Promise.all((data || []).map(async (msg) => {
+          const text = await decryptMessage(msg.message, privateKey, pubKey);
+          return { ...msg, message: text };
+        }));
+        
+        setMessages(decryptedData);
       } catch (err) {
         console.error('Error fetching messages:', err);
       } finally {
@@ -1434,7 +1471,7 @@ function ChatTab({ startCall }) {
         messagesEndRef.current?.scrollIntoView();
       }
     };
-    fetchMessages();
+    fetchMessagesAndKey();
 
     // Subscribe to new messages
     const channel = supabase.channel(`chat_${user.id}_${selectedFriend.id}`)
@@ -1442,31 +1479,49 @@ function ChatTab({ startCall }) {
         event: 'INSERT',
         schema: 'public',
         table: 'chat_messages'
-      }, payload => {
+      }, async payload => {
         const msg = payload.new;
         if ((msg.sender_id === user.id && msg.receiver_id === selectedFriend.id) ||
             (msg.sender_id === selectedFriend.id && msg.receiver_id === user.id)) {
-          setMessages(prev => [...prev, msg]);
+          const text = await decryptMessage(msg.message, privateKey, pubKeyRef.current);
+          const decryptedMsg = { ...msg, message: text };
+          setMessages(prev => [...prev, decryptedMsg]);
           messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
         }
       })
       .subscribe();
 
     return () => { supabase.removeChannel(channel); };
-  }, [selectedFriend, user.id]);
+  }, [selectedFriend, user.id, privateKey]);
 
   const handleSendMessage = async (e) => {
     e.preventDefault();
     if (!newMessage.trim() || !selectedFriend) return;
     
-    const msgText = newMessage.trim();
+    if (!friends.some(f => f.id === selectedFriend.id)) {
+      console.warn('Blocked sending message to non-friend.');
+      return;
+    }
+
+    if (!privateKey || !selectedFriendPublicKey) {
+      alert("Encrypted chat is not ready. Please refresh or open this chat again.");
+      return;
+    }
+
+    let msgText = newMessage.trim();
     setNewMessage('');
+    
+    const encryptedMsgText = await encryptMessage(msgText, privateKey, selectedFriendPublicKey);
+    if (!encryptedMsgText || !encryptedMsgText.includes('{"v":1')) {
+      alert("Encrypted chat is not ready. Please refresh or open this chat again.");
+      return;
+    }
     
     try {
       const { error } = await supabase.from('chat_messages').insert({
         sender_id: user.id,
         receiver_id: selectedFriend.id,
-        message: msgText
+        message: encryptedMsgText
       });
       if (error) throw error;
     } catch (err) {
@@ -1492,13 +1547,21 @@ function ChatTab({ startCall }) {
             <span className="chat-thread-username">@{selectedFriend.username}</span>
           </div>
           <div className="chat-header-actions">
-            <button className="chat-header-icon" onClick={handleListenTogetherInvite} title="Listen Together">🎧</button>
-            <button className="chat-header-icon" onClick={() => startCall('voice', selectedFriend)} title="Voice Call">📞</button>
-            <button className="chat-header-icon" onClick={() => startCall('video', selectedFriend)} title="Video Call">📹</button>
+            <button className="chat-header-icon" onClick={() => setShowSecurityModal(true)} title="Security">🔒</button>
+            <button className="chat-header-icon" onClick={() => {
+              if (friends.some(f => f.id === selectedFriend.id)) handleListenTogetherInvite();
+            }} title="Listen Together">🎧</button>
+            <button className="chat-header-icon" onClick={() => {
+              if (friends.some(f => f.id === selectedFriend.id)) startCall('voice', selectedFriend);
+            }} title="Voice Call">📞</button>
+            <button className="chat-header-icon" onClick={() => {
+              if (friends.some(f => f.id === selectedFriend.id)) startCall('video', selectedFriend);
+            }} title="Video Call">📹</button>
           </div>
         </div>
         
         <div className="chat-messages-area">
+          <div className="e2ee-system-message">🔒 Messages and calls are end-to-end encrypted.</div>
           {isLoadingMessages ? (
             <p className="chat-empty-state">Loading messages...</p>
           ) : messages.length === 0 ? (
@@ -1549,6 +1612,25 @@ function ChatTab({ startCall }) {
             </button>
           </form>
         </div>
+        {showSecurityModal && (
+          <div className="security-modal-overlay" onClick={() => setShowSecurityModal(false)}>
+            <div className="security-modal" onClick={e => e.stopPropagation()}>
+              <button className="security-modal-close" onClick={() => setShowSecurityModal(false)}>✖</button>
+              <h3>Security Verification</h3>
+              <p>Messages and calls are end-to-end encrypted.</p>
+              <p>Friend: <strong>{selectedFriend.display_name || selectedFriend.username}</strong></p>
+              <div className="safety-number-box">
+                {(!privateKey || !selectedFriendPublicKey)
+                  ? "Security code unavailable. Please refresh after both users open the app."
+                  : safetyNumber ? safetyNumber : "Fetching safety number..."}
+              </div>
+              <button className="btn-accept" onClick={() => {
+                if (safetyNumber) navigator.clipboard.writeText(safetyNumber);
+              }}>Copy Code</button>
+              <p style={{marginTop: '1rem', fontSize: '0.85rem', color: '#888'}}>Compare this code with your friend to verify.</p>
+            </div>
+          </div>
+        )}
       </div>
     );
   }
@@ -1666,6 +1748,39 @@ function ProfileTab({ totalSongs, favCount, myUploadsCount }) {
 
 export default function UserHome() {
   const { user } = useAuth();
+  
+  const [privateKey, setPrivateKey] = useState(null);
+  const [myPublicKey, setMyPublicKey] = useState(null);
+
+  useEffect(() => {
+    if (!user?.id) return;
+    const initCrypto = async () => {
+      try {
+        let pubKey = null;
+        let key = await getPrivateKey();
+        if (!key) {
+          const keyPair = await generateKeyPair();
+          await savePrivateKey(keyPair.privateKey);
+          key = keyPair.privateKey;
+          
+          const exportedPubKey = await exportPublicKey(keyPair.publicKey);
+          await supabase.from('user_keys').upsert({
+            user_id: user.id,
+            public_key: exportedPubKey
+          });
+          pubKey = exportedPubKey;
+        } else {
+          const { data } = await supabase.from('user_keys').select('public_key').eq('user_id', user.id).maybeSingle();
+          if (data) pubKey = data.public_key;
+        }
+        setPrivateKey(key);
+        setMyPublicKey(pubKey);
+      } catch (err) {
+        console.error('[Crypto] Error initializing keys:', err);
+      }
+    };
+    initCrypto();
+  }, [user?.id]);
 
   const [activeTab,   setActiveTab]   = useState('home');
   const [adminSongs,  setAdminSongs]  = useState([]);
@@ -1824,7 +1939,6 @@ export default function UserHome() {
       callType: type
     };
     setActiveCall({ ...callData, status: 'calling' });
-    console.log('[Spidey Call] Starting call to:', targetUser.id, 'Payload:', callData);
     sendCallSignal(targetUser.id, 'call-offer', callData);
   };
 
@@ -1832,14 +1946,12 @@ export default function UserHome() {
     if (!incomingCall) return;
     const updatedCall = { ...incomingCall, status: 'connected' };
     setActiveCall(updatedCall);
-    console.log('[Spidey Call] Accepting call from:', incomingCall.callerId);
     sendCallSignal(incomingCall.callerId, 'call-answer', updatedCall);
     setIncomingCall(null);
   };
 
   const rejectCall = () => {
     if (!incomingCall) return;
-    console.log('[Spidey Call] Rejecting call from:', incomingCall.callerId);
     sendCallSignal(incomingCall.callerId, 'call-rejected', { ...incomingCall });
     setIncomingCall(null);
   };
@@ -1847,7 +1959,6 @@ export default function UserHome() {
   const endCall = () => {
     if (!activeCall) return;
     const targetId = activeCall.callerId === user.id ? activeCall.targetUserId : activeCall.callerId;
-    console.log('[Spidey Call] Ending call with:', targetId);
     sendCallSignal(targetId, 'call-ended', { ...activeCall });
     setActiveCall(null);
   };
@@ -1917,7 +2028,7 @@ export default function UserHome() {
         {activeTab === 'home'    && <HomeTab allSongs={allSongs} search={search} favoriteIds={favoriteIds} onFavToggle={handleFavToggle} />}
         {activeTab === 'connect' && <ConnectTab />}
         {activeTab === 'library' && <LibraryTab favorites={favoriteSongs} mySongs={mySongs} search={search} favoriteIds={favoriteIds} onFavToggle={handleFavToggle} onUploaded={s => setMySongs(p => [s,...p])} onDelete={handleDelete} deletingId={deletingId} />}
-        {activeTab === 'chat'    && <ChatTab startCall={startCall} />}
+        {activeTab === 'chat'    && <ChatTab startCall={startCall} privateKey={privateKey} myPublicKey={myPublicKey} />}
         {activeTab === 'profile' && <ProfileTab totalSongs={allSongs.length} favCount={favoriteIds.length} myUploadsCount={mySongs.length} />}
       </main>
 
@@ -1940,6 +2051,7 @@ export default function UserHome() {
           <div className="call-modal" style={{ width: '90%', maxWidth: '800px', height: '80vh', display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
             <h3 style={{ marginBottom: '10px' }}>{activeCall.status === 'calling' ? 'Calling...' : 'Connected'}</h3>
             <p style={{ marginBottom: '10px' }}>{activeCall.targetUserId === user.id ? activeCall.callerName : activeCall.targetUserName}</p>
+            <p style={{ fontSize: '0.8rem', color: '#00ff88', marginBottom: '10px' }}>🔒 End-to-end encrypted</p>
             
             <div style={{ flex: 1, position: 'relative', background: '#000', borderRadius: '12px', overflow: 'hidden', marginBottom: '20px', minHeight: '300px' }}>
               <video 

@@ -2111,3 +2111,70 @@
   margin-bottom: var(--space-xl);
   font-size: 1.2rem;
 }
+
+/* =========================================
+   E2EE Security UI
+   ========================================= */
+
+.e2ee-system-message {
+  text-align: center;
+  font-size: 0.8rem;
+  color: #fbbf24;
+  background: rgba(251, 191, 36, 0.1);
+  padding: 8px 16px;
+  border-radius: var(--radius-md);
+  margin: var(--space-md) auto;
+  max-width: 80%;
+  display: inline-block;
+}
+
+.security-modal-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(10, 12, 20, 0.85);
+  backdrop-filter: blur(10px);
+  z-index: 99999;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  animation: fadeIn 0.3s ease;
+}
+
+.security-modal {
+  background: var(--bg-card);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-lg);
+  padding: var(--space-xl);
+  text-align: center;
+  box-shadow: 0 10px 40px rgba(0,0,0,0.5);
+  width: 90%;
+  max-width: 400px;
+  position: relative;
+}
+
+.security-modal-close {
+  position: absolute;
+  top: 15px;
+  right: 15px;
+  background: none;
+  border: none;
+  color: var(--text-muted);
+  font-size: 1.2rem;
+  cursor: pointer;
+  transition: color var(--transition-fast);
+}
+.security-modal-close:hover {
+  color: var(--text-primary);
+}
+
+.safety-number-box {
+  background: rgba(255, 255, 255, 0.05);
+  padding: 15px;
+  border-radius: var(--radius-md);
+  font-family: var(--font-mono);
+  font-size: 1.1rem;
+  letter-spacing: 2px;
+  margin: 20px 0;
+  word-spacing: 6px;
+  color: #00ff88;
+}
