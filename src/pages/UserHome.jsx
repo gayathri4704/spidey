@@ -1338,7 +1338,7 @@ function LibraryTab({ favorites, mySongs, search, favoriteIds, onFavToggle, onUp
   );
 }
 
-function ChatTab() {
+function ChatTab({ startCall }) {
   const { user } = useAuth();
   const [friends, setFriends] = useState([]);
   const [isLoadingFriends, setIsLoadingFriends] = useState(true);
@@ -1357,40 +1357,6 @@ function ChatTab() {
   const [selectedFile, setSelectedFile] = useState(null);
   const fileInputRef = useRef(null);
 
-  // Call State
-  const [incomingCall, setIncomingCall] = useState(null);
-  const [activeCall, setActiveCall] = useState(null);
-
-  // WebRTC Signaling setup
-  useEffect(() => {
-    const channel = supabase.channel('signaling_channel');
-    
-    channel.on('broadcast', { event: 'call-offer' }, ({ payload }) => {
-      if (payload.targetUserId === user.id) setIncomingCall(payload);
-    });
-    
-    channel.on('broadcast', { event: 'call-answer' }, ({ payload }) => {
-      if (payload.targetUserId === user.id) setActiveCall(payload);
-    });
-
-    channel.on('broadcast', { event: 'call-ended' }, ({ payload }) => {
-      if (payload.targetUserId === user.id || payload.callerId === user.id) {
-        setIncomingCall(null);
-        setActiveCall(null);
-      }
-    });
-    
-    channel.on('broadcast', { event: 'call-rejected' }, ({ payload }) => {
-      if (payload.targetUserId === user.id || payload.callerId === user.id) {
-        setIncomingCall(null);
-        setActiveCall(null);
-      }
-    });
-
-    channel.subscribe();
-    return () => { supabase.removeChannel(channel); };
-  }, [user.id]);
-
   const handleListenTogetherInvite = async () => {
     if (!selectedFriend) return;
     const roomId = `room_${Date.now()}`;
@@ -1404,53 +1370,6 @@ function ChatTab() {
         message: msgText
       });
     } catch (err) { console.error(err); }
-  };
-
-  const startCall = (type) => {
-    if (!selectedFriend) return;
-    const callData = {
-      callerId: user.id,
-      callerName: user.user_metadata?.display_name || user.email?.split('@')[0] || 'User',
-      targetUserId: selectedFriend.id,
-      callType: type
-    };
-    setActiveCall({ ...callData, status: 'calling' });
-    supabase.channel('signaling_channel').send({
-      type: 'broadcast',
-      event: 'call-offer',
-      payload: callData
-    });
-  };
-
-  const acceptCall = () => {
-    if (!incomingCall) return;
-    setActiveCall({ ...incomingCall, status: 'connected' });
-    supabase.channel('signaling_channel').send({
-      type: 'broadcast',
-      event: 'call-answer',
-      payload: { ...incomingCall, targetUserId: incomingCall.callerId }
-    });
-    setIncomingCall(null);
-  };
-
-  const rejectCall = () => {
-    if (!incomingCall) return;
-    supabase.channel('signaling_channel').send({
-      type: 'broadcast',
-      event: 'call-rejected',
-      payload: { ...incomingCall, targetUserId: incomingCall.callerId }
-    });
-    setIncomingCall(null);
-  };
-
-  const endCall = () => {
-    if (!activeCall) return;
-    supabase.channel('signaling_channel').send({
-      type: 'broadcast',
-      event: 'call-ended',
-      payload: { ...activeCall, targetUserId: activeCall.callerId === user.id ? activeCall.targetUserId : activeCall.callerId }
-    });
-    setActiveCall(null);
   };
 
   const onEmojiClick = (emojiObj) => {
@@ -1574,8 +1493,8 @@ function ChatTab() {
           </div>
           <div className="chat-header-actions">
             <button className="chat-header-icon" onClick={handleListenTogetherInvite} title="Listen Together">🎧</button>
-            <button className="chat-header-icon" onClick={() => startCall('voice')} title="Voice Call">📞</button>
-            <button className="chat-header-icon" onClick={() => startCall('video')} title="Video Call">📹</button>
+            <button className="chat-header-icon" onClick={() => startCall('voice', selectedFriend)} title="Voice Call">📞</button>
+            <button className="chat-header-icon" onClick={() => startCall('video', selectedFriend)} title="Video Call">📹</button>
           </div>
         </div>
         
@@ -1630,32 +1549,6 @@ function ChatTab() {
             </button>
           </form>
         </div>
-
-        {incomingCall && incomingCall.status === 'calling' && (
-          <div className="call-overlay">
-            <div className="call-modal">
-              <h3>Incoming {incomingCall.callType} Call</h3>
-              <p>from {incomingCall.callerName}</p>
-              <div className="call-actions">
-                <button className="btn-accept" onClick={acceptCall}>Accept</button>
-                <button className="btn-reject" onClick={rejectCall}>Reject</button>
-              </div>
-            </div>
-          </div>
-        )}
-
-        {activeCall && (
-          <div className="call-overlay active-call-overlay">
-            <div className="call-modal">
-              <h3>{activeCall.status === 'calling' ? 'Calling...' : 'Connected'}</h3>
-              <p>{activeCall.targetUserId === user.id ? activeCall.callerName : selectedFriend.display_name || selectedFriend.username}</p>
-              {activeCall.callType === 'video' && <div className="video-placeholder">📹 Video Area</div>}
-              <div className="call-actions">
-                <button className="btn-reject" onClick={endCall}>End Call</button>
-              </div>
-            </div>
-          </div>
-        )}
       </div>
     );
   }
@@ -1783,6 +1676,107 @@ export default function UserHome() {
   const [search,      setSearch]      = useState('');
   const [showSearch,  setShowSearch]  = useState(false);
 
+  // Global Call State
+  const [incomingCall, setIncomingCall] = useState(null);
+  const [activeCall, setActiveCall] = useState(null);
+
+  useEffect(() => {
+    if (!user?.id) return;
+    console.log('[Spidey Call] current user id', user.id);
+    console.log('[Spidey Call] listening on', `calls:${user.id}`);
+
+    const channel = supabase.channel(`calls:${user.id}`, {
+      config: {
+        broadcast: { self: false }
+      }
+    });
+    
+    channel.on('broadcast', { event: 'call-offer' }, ({ payload }) => {
+      console.log('[Spidey Call] incoming offer received', payload);
+      const incomingState = { ...payload, status: 'calling' };
+      setIncomingCall(incomingState);
+      console.log('[Spidey Call] incomingCall state should show modal', incomingState);
+    });
+    
+    channel.on('broadcast', { event: 'call-answer' }, ({ payload }) => {
+      console.log('[Spidey Call] call answered', payload);
+      setActiveCall(prev => prev ? { ...prev, status: 'connected' } : prev);
+    });
+
+    channel.on('broadcast', { event: 'call-ended' }, ({ payload }) => {
+      console.log('[Spidey Call] call ended', payload);
+      setIncomingCall(null);
+      setActiveCall(null);
+    });
+    
+    channel.on('broadcast', { event: 'call-rejected' }, ({ payload }) => {
+      console.log('[Spidey Call] call rejected', payload);
+      setIncomingCall(null);
+      setActiveCall(null);
+    });
+
+    channel.subscribe((status) => {
+      console.log('[Spidey Call] subscription status', status);
+    });
+
+    return () => { supabase.removeChannel(channel); };
+  }, [user.id]);
+
+  const sendCallSignal = (targetId, eventName, payload) => {
+    const channelName = `calls:${targetId}`;
+    const channel = supabase.channel(channelName);
+    channel.subscribe((status) => {
+      if (status === 'SUBSCRIBED') {
+        channel.send({
+          type: 'broadcast',
+          event: eventName,
+          payload: payload
+        }).then(res => {
+          console.log(`[Spidey Call] broadcast ${eventName} result:`, res);
+          setTimeout(() => { supabase.removeChannel(channel); }, 1000);
+        });
+      }
+    });
+  };
+
+  const startCall = (type, targetUser) => {
+    if (!targetUser) return;
+    const callData = {
+      callerId: user.id,
+      callerName: user.user_metadata?.display_name || user.email?.split('@')[0] || user.username || 'User',
+      targetUserId: targetUser.id,
+      targetUserName: targetUser.display_name || targetUser.username,
+      callType: type
+    };
+    setActiveCall({ ...callData, status: 'calling' });
+    console.log('[Spidey Call] Starting call to:', targetUser.id, 'Payload:', callData);
+    sendCallSignal(targetUser.id, 'call-offer', callData);
+  };
+
+  const acceptCall = () => {
+    if (!incomingCall) return;
+    const updatedCall = { ...incomingCall, status: 'connected' };
+    setActiveCall(updatedCall);
+    console.log('[Spidey Call] Accepting call from:', incomingCall.callerId);
+    sendCallSignal(incomingCall.callerId, 'call-answer', updatedCall);
+    setIncomingCall(null);
+  };
+
+  const rejectCall = () => {
+    if (!incomingCall) return;
+    console.log('[Spidey Call] Rejecting call from:', incomingCall.callerId);
+    sendCallSignal(incomingCall.callerId, 'call-rejected', { ...incomingCall });
+    setIncomingCall(null);
+  };
+
+  const endCall = () => {
+    if (!activeCall) return;
+    const targetId = activeCall.callerId === user.id ? activeCall.targetUserId : activeCall.callerId;
+    console.log('[Spidey Call] Ending call with:', targetId);
+    sendCallSignal(targetId, 'call-ended', { ...activeCall });
+    setActiveCall(null);
+  };
+
   const loadData = useCallback(async () => {
     try {
       const [songData, favResult] = await Promise.all([
@@ -1848,9 +1842,36 @@ export default function UserHome() {
         {activeTab === 'home'    && <HomeTab allSongs={allSongs} search={search} favoriteIds={favoriteIds} onFavToggle={handleFavToggle} />}
         {activeTab === 'connect' && <ConnectTab />}
         {activeTab === 'library' && <LibraryTab favorites={favoriteSongs} mySongs={mySongs} search={search} favoriteIds={favoriteIds} onFavToggle={handleFavToggle} onUploaded={s => setMySongs(p => [s,...p])} onDelete={handleDelete} deletingId={deletingId} />}
-        {activeTab === 'chat'    && <ChatTab />}
+        {activeTab === 'chat'    && <ChatTab startCall={startCall} />}
         {activeTab === 'profile' && <ProfileTab totalSongs={allSongs.length} favCount={favoriteIds.length} myUploadsCount={mySongs.length} />}
       </main>
+
+      {/* ── Global Call Overlays ── */}
+      {incomingCall && incomingCall.status === 'calling' && (
+        <div className="call-overlay">
+          <div className="call-modal">
+            <h3>Incoming {incomingCall.callType} Call</h3>
+            <p>from {incomingCall.callerName}</p>
+            <div className="call-actions">
+              <button className="btn-accept" onClick={acceptCall}>Accept</button>
+              <button className="btn-reject" onClick={rejectCall}>Reject</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {activeCall && (
+        <div className="call-overlay active-call-overlay">
+          <div className="call-modal">
+            <h3>{activeCall.status === 'calling' ? 'Calling...' : 'Connected'}</h3>
+            <p>{activeCall.targetUserId === user.id ? activeCall.callerName : activeCall.targetUserName}</p>
+            {activeCall.callType === 'video' && <div className="video-placeholder">📹 Video Area</div>}
+            <div className="call-actions">
+              <button className="btn-reject" onClick={endCall}>End Call</button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* ── Spotify-like Bottom Nav ── */}
       <nav className="bottom-nav">
