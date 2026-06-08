@@ -1679,65 +1679,140 @@ export default function UserHome() {
   // Global Call State
   const [incomingCall, setIncomingCall] = useState(null);
   const [activeCall, setActiveCall] = useState(null);
+  const peerConnectionRef = useRef(null);
+  const localStreamRef = useRef(null);
+  const [localStream, setLocalStream] = useState(null);
+  const [remoteStream, setRemoteStream] = useState(null);
+  const localVideoRef = useRef(null);
+  const remoteVideoRef = useRef(null);
 
   useEffect(() => {
-    if (!user?.id) return;
-    console.log('[Spidey Call] current user id', user.id);
-    console.log('[Spidey Call] listening on', `calls:${user.id}`);
+    if (localVideoRef.current && localStream) localVideoRef.current.srcObject = localStream;
+  }, [localStream, activeCall]);
 
-    const channel = supabase.channel(`calls:${user.id}`, {
-      config: {
-        broadcast: { self: false }
-      }
-    });
-    
-    channel.on('broadcast', { event: 'call-offer' }, ({ payload }) => {
-      console.log('[Spidey Call] incoming offer received', payload);
-      const incomingState = { ...payload, status: 'calling' };
-      setIncomingCall(incomingState);
-      console.log('[Spidey Call] incomingCall state should show modal', incomingState);
-    });
-    
-    channel.on('broadcast', { event: 'call-answer' }, ({ payload }) => {
-      console.log('[Spidey Call] call answered', payload);
-      setActiveCall(prev => prev ? { ...prev, status: 'connected' } : prev);
-    });
+  useEffect(() => {
+    if (remoteVideoRef.current && remoteStream) remoteVideoRef.current.srcObject = remoteStream;
+  }, [remoteStream, activeCall]);
 
-    channel.on('broadcast', { event: 'call-ended' }, ({ payload }) => {
-      console.log('[Spidey Call] call ended', payload);
-      setIncomingCall(null);
-      setActiveCall(null);
-    });
-    
-    channel.on('broadcast', { event: 'call-rejected' }, ({ payload }) => {
-      console.log('[Spidey Call] call rejected', payload);
-      setIncomingCall(null);
-      setActiveCall(null);
-    });
+  const cleanupMedia = useCallback(() => {
+    if (localStreamRef.current) {
+      localStreamRef.current.getTracks().forEach(t => t.stop());
+      localStreamRef.current = null;
+    }
+    if (peerConnectionRef.current) {
+      peerConnectionRef.current.close();
+      peerConnectionRef.current = null;
+    }
+    setLocalStream(null);
+    setRemoteStream(null);
+  }, []);
 
-    channel.subscribe((status) => {
-      console.log('[Spidey Call] subscription status', status);
-    });
-
-    return () => { supabase.removeChannel(channel); };
-  }, [user.id]);
-
-  const sendCallSignal = (targetId, eventName, payload) => {
+  const sendCallSignal = useCallback((targetId, eventName, payload) => {
     const channelName = `calls:${targetId}`;
     const channel = supabase.channel(channelName);
     channel.subscribe((status) => {
       if (status === 'SUBSCRIBED') {
-        channel.send({
-          type: 'broadcast',
-          event: eventName,
-          payload: payload
-        }).then(res => {
-          console.log(`[Spidey Call] broadcast ${eventName} result:`, res);
-          setTimeout(() => { supabase.removeChannel(channel); }, 1000);
-        });
+        channel.send({ type: 'broadcast', event: eventName, payload })
+          .then(() => setTimeout(() => supabase.removeChannel(channel), 1000));
       }
     });
-  };
+  }, []);
+
+  const requestMedia = useCallback(async (type) => {
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true, video: type === 'video' });
+      setLocalStream(stream);
+      localStreamRef.current = stream;
+      return stream;
+    } catch (err) {
+      console.error('Media access error:', err);
+      return null;
+    }
+  }, []);
+
+  const createPeerConnection = useCallback((targetUserId) => {
+    const pc = new RTCPeerConnection({ iceServers: [{ urls: 'stun:stun.l.google.com:19302' }] });
+    pc.onicecandidate = (e) => {
+      if (e.candidate) sendCallSignal(targetUserId, 'webrtc-ice-candidate', { candidate: e.candidate, senderId: user.id });
+    };
+    pc.ontrack = (e) => setRemoteStream(e.streams[0]);
+    peerConnectionRef.current = pc;
+    return pc;
+  }, [user?.id, sendCallSignal]);
+
+  useEffect(() => {
+    if (!user?.id) return;
+    const channel = supabase.channel(`calls:${user.id}`, { config: { broadcast: { self: false } } });
+    
+    channel.on('broadcast', { event: 'call-offer' }, async ({ payload }) => {
+      const { data: isFriend } = await supabase.from('friends')
+        .select('*')
+        .eq('user_id', user.id)
+        .eq('friend_id', payload.callerId)
+        .maybeSingle();
+
+      if (!isFriend) {
+        console.warn('Blocked call from non-friend');
+        return;
+      }
+      setIncomingCall({ ...payload, status: 'calling' });
+    });
+    
+    channel.on('broadcast', { event: 'call-answer' }, async ({ payload }) => {
+      setActiveCall(prev => prev ? { ...prev, status: 'connected' } : prev);
+      
+      const stream = await requestMedia(payload.callType);
+      if (!stream) {
+        alert("Could not access camera/microphone. Call failed.");
+        sendCallSignal(payload.targetUserId, 'call-ended', payload);
+        cleanupMedia();
+        setActiveCall(null);
+        return;
+      }
+
+      if (user.id === payload.callerId) {
+        const pc = createPeerConnection(payload.targetUserId);
+        stream.getTracks().forEach(track => pc.addTrack(track, stream));
+        const offer = await pc.createOffer();
+        await pc.setLocalDescription(offer);
+        sendCallSignal(payload.targetUserId, 'webrtc-offer', { sdp: offer, senderId: user.id });
+      }
+    });
+
+    channel.on('broadcast', { event: 'call-ended' }, () => {
+      cleanupMedia();
+      setIncomingCall(null);
+      setActiveCall(null);
+    });
+    
+    channel.on('broadcast', { event: 'call-rejected' }, () => {
+      cleanupMedia();
+      setIncomingCall(null);
+      setActiveCall(null);
+    });
+
+    channel.on('broadcast', { event: 'webrtc-offer' }, async ({ payload }) => {
+      const pc = createPeerConnection(payload.senderId);
+      if (localStreamRef.current) localStreamRef.current.getTracks().forEach(t => pc.addTrack(t, localStreamRef.current));
+      await pc.setRemoteDescription(payload.sdp);
+      const answer = await pc.createAnswer();
+      await pc.setLocalDescription(answer);
+      sendCallSignal(payload.senderId, 'webrtc-answer', { sdp: answer, senderId: user.id });
+    });
+
+    channel.on('broadcast', { event: 'webrtc-answer' }, async ({ payload }) => {
+      if (peerConnectionRef.current) await peerConnectionRef.current.setRemoteDescription(payload.sdp);
+    });
+
+    channel.on('broadcast', { event: 'webrtc-ice-candidate' }, async ({ payload }) => {
+      if (peerConnectionRef.current && payload.candidate) {
+        try { await peerConnectionRef.current.addIceCandidate(payload.candidate); } catch (e) {}
+      }
+    });
+
+    channel.subscribe();
+    return () => supabase.removeChannel(channel);
+  }, [user?.id, cleanupMedia, requestMedia, createPeerConnection, sendCallSignal]);
 
   const startCall = (type, targetUser) => {
     if (!targetUser) return;
@@ -1862,11 +1937,41 @@ export default function UserHome() {
 
       {activeCall && (
         <div className="call-overlay active-call-overlay">
-          <div className="call-modal">
-            <h3>{activeCall.status === 'calling' ? 'Calling...' : 'Connected'}</h3>
-            <p>{activeCall.targetUserId === user.id ? activeCall.callerName : activeCall.targetUserName}</p>
-            {activeCall.callType === 'video' && <div className="video-placeholder">📹 Video Area</div>}
-            <div className="call-actions">
+          <div className="call-modal" style={{ width: '90%', maxWidth: '800px', height: '80vh', display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
+            <h3 style={{ marginBottom: '10px' }}>{activeCall.status === 'calling' ? 'Calling...' : 'Connected'}</h3>
+            <p style={{ marginBottom: '10px' }}>{activeCall.targetUserId === user.id ? activeCall.callerName : activeCall.targetUserName}</p>
+            
+            <div style={{ flex: 1, position: 'relative', background: '#000', borderRadius: '12px', overflow: 'hidden', marginBottom: '20px', minHeight: '300px' }}>
+              <video 
+                ref={remoteVideoRef} 
+                autoPlay 
+                playsInline 
+                style={{ 
+                  width: '100%', height: '100%', objectFit: 'cover', 
+                  opacity: activeCall.callType === 'video' ? 1 : 0,
+                  position: activeCall.callType === 'video' ? 'relative' : 'absolute' 
+                }} 
+              />
+              
+              {activeCall.callType === 'voice' && (
+                 <div style={{ position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#fff', fontSize: '2rem' }}>🎙️ Voice Call</div>
+              )}
+              {activeCall.callType === 'video' && !remoteStream && activeCall.status === 'connected' && (
+                 <div style={{ position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#fff', fontSize: '1.2rem' }}>Connecting media...</div>
+              )}
+              
+              {activeCall.callType === 'video' && (
+                <video 
+                  ref={localVideoRef} 
+                  autoPlay 
+                  playsInline 
+                  muted 
+                  style={{ position: 'absolute', bottom: '20px', right: '20px', width: '120px', height: '160px', objectFit: 'cover', borderRadius: '8px', border: '2px solid rgba(255,255,255,0.5)', background: '#222' }} 
+                />
+              )}
+            </div>
+
+            <div className="call-actions" style={{ paddingBottom: '10px' }}>
               <button className="btn-reject" onClick={endCall}>End Call</button>
             </div>
           </div>
