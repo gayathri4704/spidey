@@ -1354,8 +1354,18 @@ function ChatTab({ startCall, privateKey, myPublicKey }) {
   const [selectedFriendPublicKey, setSelectedFriendPublicKey] = useState(null);
   const pubKeyRef = useRef(null);
   
-  const [safetyNumber, setSafetyNumber] = useState(null);
-  const [showSecurityModal, setShowSecurityModal] = useState(false);
+  const [hiddenMessages, setHiddenMessages] = useState(new Set());
+  const [chatSettings, setChatSettings] = useState(null);
+  const [sharedSettings, setSharedSettings] = useState(null);
+  const [systemEvents, setSystemEvents] = useState([]);
+  const [localNotices, setLocalNotices] = useState([]);
+  
+  const [showChatMenu, setShowChatMenu] = useState(false);
+  const [showClearModal, setShowClearModal] = useState(false);
+  const [showAutoClearModal, setShowAutoClearModal] = useState(false);
+  
+  const [activeMessageMenu, setActiveMessageMenu] = useState(null);
+  const [editingMessage, setEditingMessage] = useState(null);
 
   const { joinRoomChannel } = usePlayer();
   
@@ -1398,6 +1408,74 @@ function ChatTab({ startCall, privateKey, myPublicKey }) {
     if (e.target.files && e.target.files[0]) {
       setSelectedFile(e.target.files[0]);
     }
+  };
+
+  const handleDeleteForMe = async (msgId) => {
+    try {
+      await supabase.from('chat_message_hidden').insert({ message_id: msgId, user_id: user.id });
+      setHiddenMessages(prev => new Set(prev).add(msgId));
+    } catch (err) { console.error(err); }
+    setActiveMessageMenu(null);
+  };
+
+  const handleDeleteForEveryone = async (msgId) => {
+    if (!window.confirm("This message will be permanently deleted for everyone.")) return;
+    try {
+      await supabase.rpc('delete_message_for_everyone', { msg_id: msgId });
+    } catch (err) { console.error(err); }
+    setActiveMessageMenu(null);
+  };
+
+  const handleClearForMe = async () => {
+    try {
+      const { data } = await supabase.from('chat_settings').upsert({
+        user_id: user.id,
+        friend_id: selectedFriend.id,
+        cleared_at: new Date().toISOString()
+      }, { onConflict: 'user_id,friend_id' }).select().single();
+      if (data) setChatSettings(data);
+    } catch (err) { console.error(err); }
+    setShowClearModal(false);
+    setShowChatMenu(false);
+  };
+
+  const handleClearForBoth = async () => {
+    if (!window.confirm("This will permanently delete this chat for both users. This cannot be undone.")) return;
+    try {
+      await supabase.rpc('clear_chat_for_both', { other_user_id: selectedFriend.id });
+    } catch (err) { console.error(err); }
+    setShowClearModal(false);
+    setShowChatMenu(false);
+  };
+
+  const handleAutoClearChange = async (scope, mode) => {
+    try {
+      if (scope === 'me') {
+        const { data } = await supabase.from('chat_settings').upsert({
+          user_id: user.id,
+          friend_id: selectedFriend.id,
+          auto_clear_mode: mode,
+          auto_clear_updated_at: new Date().toISOString()
+        }, { onConflict: 'user_id,friend_id' }).select().single();
+        if (data) setChatSettings(data);
+        
+        // Inject local notice
+        const localNotice = {
+          id: `local_${Date.now()}`,
+          is_event: true,
+          event_type: 'auto_clear_me_changed',
+          event_data: { mode },
+          created_at: new Date().toISOString()
+        };
+        setLocalNotices(prev => [...prev, localNotice]);
+
+      } else if (scope === 'both') {
+        if (!window.confirm("This will auto clear this chat for both users.")) return;
+        await supabase.rpc('set_chat_shared_auto_clear', { other_user_id: selectedFriend.id, mode });
+      }
+    } catch (err) { console.error(err); }
+    setShowAutoClearModal(false);
+    setShowChatMenu(false);
   };
 
   // Fetch Friends
@@ -1443,12 +1521,22 @@ function ChatTab({ startCall, privateKey, myPublicKey }) {
           pubKey = keyData.public_key;
           setSelectedFriendPublicKey(pubKey);
           pubKeyRef.current = pubKey;
-          
-          if (myPublicKey) {
-            const sn = await generateSafetyNumber(myPublicKey, pubKey);
-            setSafetyNumber(sn);
-          }
         }
+
+        // Fetch hidden messages
+        const { data: hiddenData } = await supabase.from('chat_message_hidden').select('message_id').eq('user_id', user.id);
+        const hiddenSet = new Set(hiddenData?.map(h => h.message_id) || []);
+        setHiddenMessages(hiddenSet);
+        
+        // Fetch chat settings
+        const { data: settingsData } = await supabase.from('chat_settings').select('*').eq('user_id', user.id).eq('friend_id', selectedFriend.id).maybeSingle();
+        setChatSettings(settingsData);
+        
+        // Fetch shared settings
+        const { data: sharedData } = await supabase.from('chat_shared_settings').select('*')
+          .or(`and(user1_id.eq.${user.id},user2_id.eq.${selectedFriend.id}),and(user1_id.eq.${selectedFriend.id},user2_id.eq.${user.id})`)
+          .maybeSingle();
+        setSharedSettings(sharedData);
 
         const { data, error } = await supabase
           .from('chat_messages')
@@ -1460,9 +1548,18 @@ function ChatTab({ startCall, privateKey, myPublicKey }) {
         
         const decryptedData = await Promise.all((data || []).map(async (msg) => {
           const text = await decryptMessage(msg.message, privateKey, pubKey);
-          return { ...msg, message: text };
+          return { ...msg, message: text, is_message: true };
         }));
+
+        // Fetch system events
+        const { data: eventsData } = await supabase
+          .from('chat_system_events')
+          .select('*')
+          .or(`and(sender_id.eq.${user.id},receiver_id.eq.${selectedFriend.id}),and(sender_id.eq.${selectedFriend.id},receiver_id.eq.${user.id})`)
+          .order('created_at', { ascending: true });
         
+        const eventsList = eventsData || [];
+        setSystemEvents(eventsList);
         setMessages(decryptedData);
       } catch (err) {
         console.error('Error fetching messages:', err);
@@ -1473,20 +1570,53 @@ function ChatTab({ startCall, privateKey, myPublicKey }) {
     };
     fetchMessagesAndKey();
 
-    // Subscribe to new messages
+    // Subscribe to messages
     const channel = supabase.channel(`chat_${user.id}_${selectedFriend.id}`)
       .on('postgres_changes', {
-        event: 'INSERT',
+        event: '*',
         schema: 'public',
         table: 'chat_messages'
       }, async payload => {
-        const msg = payload.new;
-        if ((msg.sender_id === user.id && msg.receiver_id === selectedFriend.id) ||
-            (msg.sender_id === selectedFriend.id && msg.receiver_id === user.id)) {
-          const text = await decryptMessage(msg.message, privateKey, pubKeyRef.current);
-          const decryptedMsg = { ...msg, message: text };
-          setMessages(prev => [...prev, decryptedMsg]);
+        if (payload.eventType === 'INSERT' || payload.eventType === 'UPDATE') {
+          const msg = payload.new;
+          if ((msg.sender_id === user.id && msg.receiver_id === selectedFriend.id) ||
+              (msg.sender_id === selectedFriend.id && msg.receiver_id === user.id)) {
+            const text = await decryptMessage(msg.message, privateKey, pubKeyRef.current);
+            const decryptedMsg = { ...msg, message: text };
+            if (payload.eventType === 'INSERT') {
+              setMessages(prev => [...prev, decryptedMsg]);
+              messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+            } else {
+              setMessages(prev => prev.map(m => m.id === msg.id ? decryptedMsg : m));
+            }
+          }
+        } else if (payload.eventType === 'DELETE') {
+          setMessages(prev => prev.filter(m => m.id !== payload.old.id));
+        }
+      })
+      .on('postgres_changes', {
+        event: 'INSERT',
+        schema: 'public',
+        table: 'chat_system_events'
+      }, payload => {
+        const ev = payload.new;
+        if ((ev.sender_id === user.id && ev.receiver_id === selectedFriend.id) ||
+            (ev.sender_id === selectedFriend.id && ev.receiver_id === user.id)) {
+          setSystemEvents(prev => [...prev, ev]);
           messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+        }
+      })
+      .on('postgres_changes', {
+        event: '*',
+        schema: 'public',
+        table: 'chat_shared_settings'
+      }, payload => {
+        if (payload.eventType === 'INSERT' || payload.eventType === 'UPDATE') {
+          const setting = payload.new;
+          if ((setting.user1_id === user.id && setting.user2_id === selectedFriend.id) ||
+              (setting.user1_id === selectedFriend.id && setting.user2_id === user.id)) {
+            setSharedSettings(setting);
+          }
         }
       })
       .subscribe();
@@ -1517,6 +1647,17 @@ function ChatTab({ startCall, privateKey, myPublicKey }) {
       return;
     }
     
+    if (editingMessage) {
+      try {
+        await supabase.from('chat_messages').update({
+          message: encryptedMsgText,
+          edited_at: new Date().toISOString()
+        }).eq('id', editingMessage.id);
+        setEditingMessage(null);
+      } catch(err) { console.error('Error editing message:', err); }
+      return;
+    }
+
     try {
       const { error } = await supabase.from('chat_messages').insert({
         sender_id: user.id,
@@ -1534,6 +1675,48 @@ function ChatTab({ startCall, privateKey, myPublicKey }) {
     (f.username || '').toLowerCase().includes(chatSearch.toLowerCase())
   );
 
+  const combinedFeed = [...messages.map(m=>({...m, is_message:true})), ...systemEvents.map(e=>({...e, is_event:true})), ...localNotices]
+    .sort((a,b) => new Date(a.created_at) - new Date(b.created_at));
+
+  const filteredFeed = combinedFeed.filter(item => {
+    if (item.is_message && hiddenMessages.has(item.id)) return false;
+
+    const itemDate = new Date(item.created_at);
+    if (chatSettings?.cleared_at && itemDate < new Date(chatSettings.cleared_at)) return false;
+
+    const meMode = chatSettings?.auto_clear_mode || 'off';
+    const bothMode = sharedSettings?.auto_clear_mode || 'off';
+    
+    const applyClear = (mode) => {
+      if (mode === '24h' && Date.now() - itemDate.getTime() > 24 * 60 * 60 * 1000) return true;
+      if (mode === 'week' && Date.now() - itemDate.getTime() > 7 * 24 * 60 * 60 * 1000) return true;
+      return false;
+    };
+
+    if (applyClear(meMode) || applyClear(bothMode)) return false;
+    return true;
+  });
+
+  const renderSystemEvent = (ev) => {
+    let text = '';
+    if (ev.event_type === 'auto_clear_both_changed') {
+      text = ev.event_data?.mode === 'off' 
+        ? "⏱️ Auto clear for both users is turned off"
+        : `⏱️ Auto clear is set to ${ev.event_data?.mode === 'week' ? '1 week' : '24 hours'} for both users`;
+    } else if (ev.event_type === 'auto_clear_me_changed') {
+      text = ev.event_data?.mode === 'off'
+        ? "⏱️ Auto clear only for you is turned off"
+        : `⏱️ Auto clear is set to ${ev.event_data?.mode === 'week' ? '1 week' : '24 hours'} only for you`;
+    } else if (ev.event_type === 'message_deleted_for_everyone') {
+      text = "🗑️ A message was deleted for everyone";
+    } else if (ev.event_type === 'clear_for_both') {
+      text = "🧹 Chat was cleared for both users";
+    } else {
+      return null;
+    }
+    return <div key={ev.id} className="e2ee-system-message">{text}</div>;
+  };
+
   if (selectedFriend) {
     return (
       <div className="chat-conversation" aria-labelledby="tab-chat">
@@ -1547,7 +1730,6 @@ function ChatTab({ startCall, privateKey, myPublicKey }) {
             <span className="chat-thread-username">@{selectedFriend.username}</span>
           </div>
           <div className="chat-header-actions">
-            <button className="chat-header-icon" onClick={() => setShowSecurityModal(true)} title="Security">🔒</button>
             <button className="chat-header-icon" onClick={() => {
               if (friends.some(f => f.id === selectedFriend.id)) handleListenTogetherInvite();
             }} title="Listen Together">🎧</button>
@@ -1557,6 +1739,15 @@ function ChatTab({ startCall, privateKey, myPublicKey }) {
             <button className="chat-header-icon" onClick={() => {
               if (friends.some(f => f.id === selectedFriend.id)) startCall('video', selectedFriend);
             }} title="Video Call">📹</button>
+            <div style={{ position: 'relative' }}>
+              <button className="chat-header-icon" onClick={() => setShowChatMenu(!showChatMenu)} title="Menu">⋮</button>
+              {showChatMenu && (
+                <div className="chat-dropdown-menu">
+                  <button onClick={() => setShowClearModal(true)}>Clear Chat</button>
+                  <button onClick={() => setShowAutoClearModal(true)}>Auto Clear Chat</button>
+                </div>
+              )}
+            </div>
           </div>
         </div>
         
@@ -1564,17 +1755,31 @@ function ChatTab({ startCall, privateKey, myPublicKey }) {
           <div className="e2ee-system-message">🔒 Messages and calls are end-to-end encrypted.</div>
           {isLoadingMessages ? (
             <p className="chat-empty-state">Loading messages...</p>
-          ) : messages.length === 0 ? (
+          ) : filteredFeed.length === 0 ? (
             <p className="chat-empty-state">Say hi to start the conversation!</p>
           ) : (
-            messages.map(msg => {
+            filteredFeed.map(item => {
+              if (item.is_event) {
+                return renderSystemEvent(item);
+              }
+              const msg = item;
               const isMine = msg.sender_id === user.id;
               const time = new Date(msg.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
               return (
                 <div key={msg.id} className={`message-row ${isMine ? 'mine' : 'theirs'}`}>
-                  <div className="message-bubble">
+                  <div className="message-bubble" onContextMenu={(e) => { e.preventDefault(); setActiveMessageMenu(msg.id); }}>
                     {msg.message}
+                    {msg.edited_at && <span className="message-edited-label">(edited)</span>}
                     <span className="message-time">{time}</span>
+                    
+                    {activeMessageMenu === msg.id && (
+                      <div className="message-action-menu">
+                        <button onClick={() => handleDeleteForMe(msg.id)}>Delete for me</button>
+                        {isMine && <button onClick={() => handleDeleteForEveryone(msg.id)}>Delete for everyone</button>}
+                        {isMine && <button onClick={() => { setEditingMessage(msg); setNewMessage(msg.message); setActiveMessageMenu(null); }}>Edit</button>}
+                        <button onClick={() => setActiveMessageMenu(null)}>Cancel</button>
+                      </div>
+                    )}
                   </div>
                 </div>
               );
@@ -1595,6 +1800,12 @@ function ChatTab({ startCall, privateKey, myPublicKey }) {
               <button type="button" onClick={() => setSelectedFile(null)}>✖</button>
             </div>
           )}
+          {editingMessage && (
+            <div className="edit-message-banner">
+              <span>Editing message...</span>
+              <button type="button" onClick={() => { setEditingMessage(null); setNewMessage(''); }}>✖</button>
+            </div>
+          )}
           <form className="chat-composer" onSubmit={handleSendMessage}>
             <button type="button" className="chat-icon-btn" onClick={() => setShowEmojiPicker(!showEmojiPicker)}>😊</button>
             <button type="button" className="chat-icon-btn" onClick={() => fileInputRef.current?.click()}>📎</button>
@@ -1602,32 +1813,55 @@ function ChatTab({ startCall, privateKey, myPublicKey }) {
             <input 
               type="text" 
               className="chat-text-input" 
-              placeholder="Type a message..." 
+              placeholder={editingMessage ? "Edit your message..." : "Type a message..."}
               value={newMessage} 
               onChange={(e) => setNewMessage(e.target.value)} 
               onClick={() => setShowEmojiPicker(false)}
             />
             <button type="submit" className="chat-send-btn" disabled={!newMessage.trim() && !selectedFile}>
-              ➤
+              {editingMessage ? '✓' : '➤'}
             </button>
           </form>
         </div>
-        {showSecurityModal && (
-          <div className="security-modal-overlay" onClick={() => setShowSecurityModal(false)}>
-            <div className="security-modal" onClick={e => e.stopPropagation()}>
-              <button className="security-modal-close" onClick={() => setShowSecurityModal(false)}>✖</button>
-              <h3>Security Verification</h3>
-              <p>Messages and calls are end-to-end encrypted.</p>
-              <p>Friend: <strong>{selectedFriend.display_name || selectedFriend.username}</strong></p>
-              <div className="safety-number-box">
-                {(!privateKey || !selectedFriendPublicKey)
-                  ? "Security code unavailable. Please refresh after both users open the app."
-                  : safetyNumber ? safetyNumber : "Fetching safety number..."}
+
+        {showClearModal && (
+          <div className="security-modal-overlay">
+            <div className="security-modal">
+              <button className="security-modal-close" onClick={() => setShowClearModal(false)}>✖</button>
+              <h3>Clear Chat</h3>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '10px', marginTop: '20px' }}>
+                <button className="btn-accept" onClick={handleClearForMe}>Clear only for me</button>
+                <button className="btn-reject" onClick={handleClearForBoth}>Clear for both</button>
               </div>
-              <button className="btn-accept" onClick={() => {
-                if (safetyNumber) navigator.clipboard.writeText(safetyNumber);
-              }}>Copy Code</button>
-              <p style={{marginTop: '1rem', fontSize: '0.85rem', color: '#888'}}>Compare this code with your friend to verify.</p>
+            </div>
+          </div>
+        )}
+
+        {showAutoClearModal && (
+          <div className="security-modal-overlay">
+            <div className="security-modal" style={{ padding: '24px', borderRadius: '24px', textAlign: 'left', minWidth: '320px' }}>
+              <button className="security-modal-close" onClick={() => setShowAutoClearModal(false)}>✖</button>
+              <h3 style={{ marginBottom: '16px', fontSize: '1.2rem', fontWeight: 600 }}>Auto Clear Chat</h3>
+              
+              <div style={{ marginBottom: '24px' }}>
+                <h4 style={{ margin: '0 0 8px 0', fontSize: '1rem', color: 'var(--text-primary)' }}>Only for me</h4>
+                <p style={{ fontSize: '0.85rem', color: 'var(--text-muted)', marginBottom: '12px' }}>Current: {chatSettings?.auto_clear_mode || 'off'}</p>
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '8px' }}>
+                  <button className="btn-accept" style={{ padding: '10px 0', fontSize: '0.9rem', borderRadius: '30px', background: (!chatSettings?.auto_clear_mode || chatSettings.auto_clear_mode === 'off') ? 'var(--bg-hover)' : 'transparent', border: '1px solid var(--border-subtle)' }} onClick={() => handleAutoClearChange('me', 'off')}>Off</button>
+                  <button className="btn-accept" style={{ padding: '10px 0', fontSize: '0.9rem', borderRadius: '30px', background: chatSettings?.auto_clear_mode === '24h' ? 'var(--bg-hover)' : 'transparent', border: '1px solid var(--border-subtle)' }} onClick={() => handleAutoClearChange('me', '24h')}>24h</button>
+                  <button className="btn-accept" style={{ padding: '10px 0', fontSize: '0.9rem', borderRadius: '30px', background: chatSettings?.auto_clear_mode === 'week' ? 'var(--bg-hover)' : 'transparent', border: '1px solid var(--border-subtle)' }} onClick={() => handleAutoClearChange('me', 'week')}>1 week</button>
+                </div>
+              </div>
+
+              <div style={{ borderTop: '1px solid var(--border-subtle)', paddingTop: '20px' }}>
+                <h4 style={{ margin: '0 0 8px 0', fontSize: '1rem', color: 'var(--text-primary)' }}>For both</h4>
+                <p style={{ fontSize: '0.85rem', color: 'var(--text-muted)', marginBottom: '12px' }}>Current: {sharedSettings?.auto_clear_mode || 'off'}</p>
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '8px' }}>
+                  <button className="btn-accept" style={{ padding: '10px 0', fontSize: '0.9rem', borderRadius: '30px', background: (!sharedSettings?.auto_clear_mode || sharedSettings.auto_clear_mode === 'off') ? 'var(--bg-hover)' : 'transparent', border: '1px solid var(--border-subtle)' }} onClick={() => handleAutoClearChange('both', 'off')}>Off</button>
+                  <button className="btn-accept" style={{ padding: '10px 0', fontSize: '0.9rem', borderRadius: '30px', background: sharedSettings?.auto_clear_mode === '24h' ? 'var(--bg-hover)' : 'transparent', border: '1px solid var(--border-subtle)' }} onClick={() => handleAutoClearChange('both', '24h')}>24h</button>
+                  <button className="btn-accept" style={{ padding: '10px 0', fontSize: '0.9rem', borderRadius: '30px', background: sharedSettings?.auto_clear_mode === 'week' ? 'var(--bg-hover)' : 'transparent', border: '1px solid var(--border-subtle)' }} onClick={() => handleAutoClearChange('both', 'week')}>1 week</button>
+                </div>
+              </div>
             </div>
           </div>
         )}
@@ -1679,7 +1913,7 @@ function ChatTab({ startCall, privateKey, myPublicKey }) {
   );
 }
 
-function ProfileTab({ totalSongs, favCount, myUploadsCount }) {
+function ProfileTab({ totalSongs, favCount, myUploadsCount, privateKey, myPublicKey }) {
   const { user, logout } = useAuth();
   const { themes, currentThemeId, changeTheme } = useTheme();
   const joinDate = user?.createdAt ? formatDate(user.createdAt, { year: 'numeric', month: 'short', day: 'numeric' }) : '—';
@@ -1727,6 +1961,23 @@ function ProfileTab({ totalSongs, favCount, myUploadsCount }) {
             </div>
           ))}
           {themes.length === 0 && <p className="text-muted">No themes available.</p>}
+        </div>
+      </div>
+
+      <div className="dash-section">
+        <h2 className="dash-section-title">🔒 Security Verification</h2>
+        <div style={{ display: 'grid', gap: '1rem' }}>
+          <p style={{ fontSize: '0.9rem', color: 'var(--text-muted)' }}>Messages and calls are end-to-end encrypted. Generate a safety number with a friend to verify.</p>
+          <button className="btn-accept" onClick={async () => {
+            const username = window.prompt("Enter friend's username to verify:");
+            if (!username) return;
+            const { data } = await supabase.from('profiles').select('id, username').eq('username', username).maybeSingle();
+            if (!data) return alert('User not found.');
+            const { data: keyData } = await supabase.from('user_keys').select('public_key').eq('user_id', data.id).maybeSingle();
+            if (!keyData || !keyData.public_key) return alert('Security code unavailable for this user.');
+            const sn = await generateSafetyNumber(myPublicKey, keyData.public_key);
+            alert(`Safety Number with ${data.username}:\n\n${sn}\n\nCompare this code with your friend to verify.`);
+          }} style={{ width: 'fit-content' }}>Verify Friend</button>
         </div>
       </div>
 
@@ -2029,7 +2280,7 @@ export default function UserHome() {
         {activeTab === 'connect' && <ConnectTab />}
         {activeTab === 'library' && <LibraryTab favorites={favoriteSongs} mySongs={mySongs} search={search} favoriteIds={favoriteIds} onFavToggle={handleFavToggle} onUploaded={s => setMySongs(p => [s,...p])} onDelete={handleDelete} deletingId={deletingId} />}
         {activeTab === 'chat'    && <ChatTab startCall={startCall} privateKey={privateKey} myPublicKey={myPublicKey} />}
-        {activeTab === 'profile' && <ProfileTab totalSongs={allSongs.length} favCount={favoriteIds.length} myUploadsCount={mySongs.length} />}
+        {activeTab === 'profile' && <ProfileTab totalSongs={allSongs.length} favCount={favoriteIds.length} myUploadsCount={mySongs.length} privateKey={privateKey} myPublicKey={myPublicKey} />}
       </main>
 
       {/* ── Global Call Overlays ── */}

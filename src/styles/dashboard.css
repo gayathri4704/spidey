@@ -2178,3 +2178,99 @@
   word-spacing: 6px;
   color: #00ff88;
 }
+
+/* =========================================
+   Chat Action Menus & Edits
+   ========================================= */
+
+.chat-dropdown-menu {
+  position: absolute;
+  top: 100%;
+  right: 0;
+  background: var(--bg-card);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-md);
+  box-shadow: 0 4px 15px rgba(0,0,0,0.3);
+  padding: 8px 0;
+  z-index: 1000;
+  min-width: 150px;
+}
+
+.chat-dropdown-menu button {
+  display: block;
+  width: 100%;
+  padding: 8px 16px;
+  background: none;
+  border: none;
+  color: var(--text-primary);
+  text-align: left;
+  cursor: pointer;
+  transition: background var(--transition-fast);
+}
+
+.chat-dropdown-menu button:hover {
+  background: rgba(255, 255, 255, 0.1);
+}
+
+.message-bubble {
+  position: relative;
+}
+
+.message-action-menu {
+  position: absolute;
+  top: 100%;
+  right: 0;
+  background: var(--bg-card);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-md);
+  box-shadow: 0 4px 15px rgba(0,0,0,0.3);
+  padding: 4px 0;
+  z-index: 10;
+  min-width: 150px;
+}
+
+.message-row.theirs .message-action-menu {
+  right: auto;
+  left: 0;
+}
+
+.message-action-menu button {
+  display: block;
+  width: 100%;
+  padding: 8px 16px;
+  background: none;
+  border: none;
+  color: var(--text-primary);
+  text-align: left;
+  font-size: 0.9rem;
+  cursor: pointer;
+}
+
+.message-action-menu button:hover {
+  background: rgba(255, 255, 255, 0.1);
+}
+
+.message-edited-label {
+  font-size: 0.7rem;
+  color: rgba(255, 255, 255, 0.5);
+  margin-left: 6px;
+  font-style: italic;
+}
+
+.edit-message-banner {
+  background: rgba(37, 99, 235, 0.1);
+  border-top: 1px solid var(--border-subtle);
+  padding: 8px 16px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-size: 0.85rem;
+  color: var(--spidey-blue);
+}
+
+.edit-message-banner button {
+  background: none;
+  border: none;
+  color: var(--text-muted);
+  cursor: pointer;
+}
