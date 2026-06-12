@@ -5,8 +5,9 @@
  *   • Home: All available songs (Admin + Mine)
  *   • Connect: Social features (Friends, Rooms)
  *   • Library: Favorites & My Songs
- *   • Create: Upload & Manage Songs
- *   • Profile: Stats & Settings
+ *   • Chat: E2EE messaging
+ *   • Todo: Personal task list
+ *   • Settings: Profile, Themes, Security (via ⚙️ topbar icon)
  * ──────────────────────────────────────────────────────────────
  */
 
@@ -18,6 +19,7 @@ import { supabase }  from '../lib/supabaseClient';
 import { formatDate } from '../utils/helpers';
 import EmojiPicker from 'emoji-picker-react';
 import '../styles/dashboard.css';
+import TodoTab from '../components/TodoTab';
 import { encryptMessage, decryptMessage, getPrivateKey, savePrivateKey, generateKeyPair, exportPublicKey, generateSafetyNumber } from '../utils/crypto';
 
 const BUCKET = 'spidey';
@@ -1913,13 +1915,14 @@ function ChatTab({ startCall, privateKey, myPublicKey }) {
   );
 }
 
-function ProfileTab({ totalSongs, favCount, myUploadsCount, privateKey, myPublicKey }) {
+// ── SettingsTab (was ProfileTab) ─────────────────────────────
+function SettingsTab({ totalSongs, favCount, myUploadsCount, privateKey, myPublicKey }) {
   const { user, logout } = useAuth();
   const { themes, currentThemeId, changeTheme } = useTheme();
   const joinDate = user?.createdAt ? formatDate(user.createdAt, { year: 'numeric', month: 'short', day: 'numeric' }) : '—';
 
   return (
-    <div className="tab-pane active" aria-labelledby="tab-profile">
+    <div className="tab-pane active" aria-labelledby="tab-settings">
       <div className="dashboard-welcome user-theme" style={{ marginBottom: '1rem' }}>
         <h1 className="welcome-title">{user?.username || user?.email}</h1>
         <p className="welcome-sub">Manage your profile and settings.</p>
@@ -1982,7 +1985,7 @@ function ProfileTab({ totalSongs, favCount, myUploadsCount, privateKey, myPublic
       </div>
 
       <div className="dash-section">
-        <h2 className="dash-section-title">⚙️ Settings</h2>
+        <h2 className="dash-section-title">⚙️ Account</h2>
         <div style={{ display: 'grid', gap: '1rem' }}>
           <p>Email: {user?.email}</p>
           <p>Member Since: {joinDate}</p>
@@ -1992,6 +1995,9 @@ function ProfileTab({ totalSongs, favCount, myUploadsCount, privateKey, myPublic
     </div>
   );
 }
+
+
+// ── TodoTab is imported from src/components/TodoTab.jsx
 
 // ─────────────────────────────────────────────
 //  UserHome (root)
@@ -2262,8 +2268,22 @@ export default function UserHome() {
       <header className="dashboard-topbar" role="banner">
         <div className="topbar-logo">SPIDEY</div>
         <div className="topbar-right">
-          <button className="topbar-icon-btn" onClick={() => setShowSearch(!showSearch)}>
+          <button
+            id="topbar-search-btn"
+            className="topbar-icon-btn"
+            onClick={() => setShowSearch(!showSearch)}
+            aria-label="Toggle search"
+          >
             🔍
+          </button>
+          <button
+            id="topbar-settings-btn"
+            className={`topbar-icon-btn topbar-settings-btn${activeTab === 'settings' ? ' active' : ''}`}
+            onClick={() => setActiveTab(prev => prev === 'settings' ? 'home' : 'settings')}
+            aria-label="Settings"
+            title="Settings"
+          >
+            ⚙️
           </button>
         </div>
       </header>
@@ -2276,11 +2296,12 @@ export default function UserHome() {
 
       {/* ── Main Scrolling Content ── */}
       <main className="dashboard-body" id="user-main" role="main">
-        {activeTab === 'home'    && <HomeTab allSongs={allSongs} search={search} favoriteIds={favoriteIds} onFavToggle={handleFavToggle} />}
-        {activeTab === 'connect' && <ConnectTab />}
-        {activeTab === 'library' && <LibraryTab favorites={favoriteSongs} mySongs={mySongs} search={search} favoriteIds={favoriteIds} onFavToggle={handleFavToggle} onUploaded={s => setMySongs(p => [s,...p])} onDelete={handleDelete} deletingId={deletingId} />}
-        {activeTab === 'chat'    && <ChatTab startCall={startCall} privateKey={privateKey} myPublicKey={myPublicKey} />}
-        {activeTab === 'profile' && <ProfileTab totalSongs={allSongs.length} favCount={favoriteIds.length} myUploadsCount={mySongs.length} privateKey={privateKey} myPublicKey={myPublicKey} />}
+        {activeTab === 'home'     && <HomeTab allSongs={allSongs} search={search} favoriteIds={favoriteIds} onFavToggle={handleFavToggle} />}
+        {activeTab === 'connect'  && <ConnectTab />}
+        {activeTab === 'library'  && <LibraryTab favorites={favoriteSongs} mySongs={mySongs} search={search} favoriteIds={favoriteIds} onFavToggle={handleFavToggle} onUploaded={s => setMySongs(p => [s,...p])} onDelete={handleDelete} deletingId={deletingId} />}
+        {activeTab === 'chat'     && <ChatTab startCall={startCall} privateKey={privateKey} myPublicKey={myPublicKey} />}
+        {activeTab === 'todo'     && <TodoTab />}
+        {activeTab === 'settings' && <SettingsTab totalSongs={allSongs.length} favCount={favoriteIds.length} myUploadsCount={mySongs.length} privateKey={privateKey} myPublicKey={myPublicKey} />}
       </main>
 
       {/* ── Global Call Overlays ── */}
@@ -2342,21 +2363,46 @@ export default function UserHome() {
       )}
 
       {/* ── Spotify-like Bottom Nav ── */}
-      <nav className="bottom-nav">
-        <button className={`nav-item ${activeTab === 'home' ? 'active' : ''}`} onClick={() => setActiveTab('home')}>
+      <nav className="bottom-nav" role="navigation" aria-label="Main navigation">
+        <button
+          id="nav-home"
+          className={`nav-item ${activeTab === 'home' ? 'active' : ''}`}
+          onClick={() => setActiveTab('home')}
+          aria-label="Home"
+        >
           <span className="nav-icon">🏠</span><span className="nav-label">Home</span>
         </button>
-        <button className={`nav-item ${activeTab === 'connect' ? 'active' : ''}`} onClick={() => setActiveTab('connect')}>
+        <button
+          id="nav-connect"
+          className={`nav-item ${activeTab === 'connect' ? 'active' : ''}`}
+          onClick={() => setActiveTab('connect')}
+          aria-label="Connect"
+        >
           <span className="nav-icon">🤝</span><span className="nav-label">Connect</span>
         </button>
-        <button className={`nav-item ${activeTab === 'library' ? 'active' : ''}`} onClick={() => setActiveTab('library')}>
+        <button
+          id="nav-library"
+          className={`nav-item ${activeTab === 'library' ? 'active' : ''}`}
+          onClick={() => setActiveTab('library')}
+          aria-label="Library"
+        >
           <span className="nav-icon">📚</span><span className="nav-label">Library</span>
         </button>
-        <button className={`nav-item ${activeTab === 'chat' ? 'active' : ''}`} onClick={() => setActiveTab('chat')}>
+        <button
+          id="nav-chat"
+          className={`nav-item ${activeTab === 'chat' ? 'active' : ''}`}
+          onClick={() => setActiveTab('chat')}
+          aria-label="Chat"
+        >
           <span className="nav-icon">💬</span><span className="nav-label">Chat</span>
         </button>
-        <button className={`nav-item ${activeTab === 'profile' ? 'active' : ''}`} onClick={() => setActiveTab('profile')}>
-          <span className="nav-icon">👤</span><span className="nav-label">Profile</span>
+        <button
+          id="nav-todo"
+          className={`nav-item ${activeTab === 'todo' ? 'active' : ''}`}
+          onClick={() => setActiveTab('todo')}
+          aria-label="Todo"
+        >
+          <span className="nav-icon">✅</span><span className="nav-label">Todo</span>
         </button>
       </nav>
 
