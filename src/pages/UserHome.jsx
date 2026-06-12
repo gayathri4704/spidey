@@ -2048,176 +2048,447 @@ export default function UserHome() {
   const [search,      setSearch]      = useState('');
   const [showSearch,  setShowSearch]  = useState(false);
 
-  // Global Call State
-  const [incomingCall, setIncomingCall] = useState(null);
-  const [activeCall, setActiveCall] = useState(null);
-  const peerConnectionRef = useRef(null);
-  const localStreamRef = useRef(null);
-  const [localStream, setLocalStream] = useState(null);
-  const [remoteStream, setRemoteStream] = useState(null);
-  const localVideoRef = useRef(null);
-  const remoteVideoRef = useRef(null);
+  // ─── Global Call State ───────────────────────────────────────
+  const [incomingCall, setIncomingCall]   = useState(null);   // incoming ring data
+  const [activeCall,   setActiveCall]     = useState(null);   // active call data
+  const [callStatus,   setCallStatus]     = useState('idle'); // idle|ringing|connecting|connected|ended
+  const [localStream,  setLocalStream]    = useState(null);
+  const [remoteStream, setRemoteStream]   = useState(null);
 
+  const peerConnectionRef  = useRef(null);
+  const localStreamRef     = useRef(null);
+  const remoteStreamRef    = useRef(null);  // accumulates remote tracks
+  const localVideoRef      = useRef(null);
+  const remoteVideoRef     = useRef(null);
+  const remoteAudioRef     = useRef(null);  // hidden audio for voice-call only
+  const callRoleRef        = useRef(null);  // 'caller' | 'receiver'
+  const activeCallRef      = useRef(null);  // mirror of activeCall for use inside event handlers
+  const pendingCandidates  = useRef([]);    // ICE candidates queued before remote desc is set
+  const ringTimeoutRef     = useRef(null);  // auto-cancel ring after 30 s
+
+  // Sync local video srcObject
   useEffect(() => {
-    if (localVideoRef.current && localStream) localVideoRef.current.srcObject = localStream;
+    if (localVideoRef.current && localStream) {
+      localVideoRef.current.srcObject = localStream;
+    }
   }, [localStream, activeCall]);
 
+  // Sync remote video srcObject (video call)
   useEffect(() => {
-    if (remoteVideoRef.current && remoteStream) remoteVideoRef.current.srcObject = remoteStream;
-  }, [remoteStream, activeCall]);
+    if (!remoteStream) return;
+    console.log('[Call] remoteStream updated, tracks:',
+      remoteStream.getTracks().map(t => `${t.kind}:${t.readyState}`));
+    console.log('[Call] video tracks:', remoteStream.getVideoTracks().length,
+      'audio tracks:', remoteStream.getAudioTracks().length);
 
-  const cleanupMedia = useCallback(() => {
+    // Always attach to video element (works for both voice+video)
+    if (remoteVideoRef.current) {
+      remoteVideoRef.current.srcObject = remoteStream;
+      remoteVideoRef.current.play().catch(e => console.warn('[Call] remote video play:', e));
+    }
+    // Voice call: also pipe into dedicated audio element
+    if (remoteAudioRef.current) {
+      remoteAudioRef.current.srcObject = remoteStream;
+      remoteAudioRef.current.play().catch(e => console.warn('[Call] remote audio play:', e));
+    }
+  }, [remoteStream]);
+
+  // Re-attach srcObject whenever the video DOM node appears (after remount)
+  const attachRemoteVideoRef = useCallback((node) => {
+    remoteVideoRef.current = node;
+    if (node && remoteStreamRef.current) {
+      node.srcObject = remoteStreamRef.current;
+      node.play().catch(e => console.warn('[Call] remote video attach play:', e));
+    }
+  }, []);
+
+  const attachLocalVideoRef = useCallback((node) => {
+    localVideoRef.current = node;
+    if (node && localStreamRef.current) {
+      node.srcObject = localStreamRef.current;
+    }
+  }, []);
+
+  // ── sendCallSignal ────────────────────────────────────────────
+  // Broadcasts an event to the target user's personal channel.
+  // Each user listens on calls:{user.id}; we publish to that channel.
+  const sendCallSignal = useCallback((targetId, eventName, payload) => {
+    console.log('[Call] sendCallSignal →', targetId, eventName);
+    // Subscribe to the target's channel so we can broadcast into it
+    const ch = supabase.channel(`calls:${targetId}`);
+    ch.subscribe((status) => {
+      if (status === 'SUBSCRIBED') {
+        ch.send({ type: 'broadcast', event: eventName, payload })
+          .then(() => setTimeout(() => supabase.removeChannel(ch), 2000))
+          .catch(err => console.error('[Call] sendCallSignal error:', err));
+      }
+    });
+  }, []);
+
+  // Stable ref so event handlers inside the minimal-dep useEffect always get latest fn
+  const sendCallSignalRef = useRef(sendCallSignal);
+  useEffect(() => { sendCallSignalRef.current = sendCallSignal; }, [sendCallSignal]);
+
+  // Fully tears down media + PeerConnection
+  const cleanupCall = useCallback(() => {
+    console.log('[Call] cleanupCall()');
+    if (ringTimeoutRef.current) { clearTimeout(ringTimeoutRef.current); ringTimeoutRef.current = null; }
     if (localStreamRef.current) {
       localStreamRef.current.getTracks().forEach(t => t.stop());
       localStreamRef.current = null;
     }
     if (peerConnectionRef.current) {
+      peerConnectionRef.current.onicecandidate = null;
+      peerConnectionRef.current.ontrack        = null;
       peerConnectionRef.current.close();
       peerConnectionRef.current = null;
     }
+    remoteStreamRef.current   = null;
+    pendingCandidates.current = [];
+    callRoleRef.current       = null;
+    activeCallRef.current     = null;
     setLocalStream(null);
     setRemoteStream(null);
+    setCallStatus('idle');
   }, []);
 
-  const sendCallSignal = useCallback((targetId, eventName, payload) => {
-    const channelName = `calls:${targetId}`;
-    const channel = supabase.channel(channelName);
-    channel.subscribe((status) => {
-      if (status === 'SUBSCRIBED') {
-        channel.send({ type: 'broadcast', event: eventName, payload })
-          .then(() => setTimeout(() => supabase.removeChannel(channel), 1000));
-      }
-    });
-  }, []);
+  const cleanupCallRef = useRef(cleanupCall);
+  useEffect(() => { cleanupCallRef.current = cleanupCall; }, [cleanupCall]);
 
-  const requestMedia = useCallback(async (type) => {
+  // Acquire local media (audio only for voice, audio+video for video)
+  const requestMedia = useCallback(async (callType) => {
     try {
-      const stream = await navigator.mediaDevices.getUserMedia({ audio: true, video: type === 'video' });
-      setLocalStream(stream);
+      const constraints = { audio: true, video: callType === 'video' };
+      console.log('[Call] requestMedia constraints:', constraints);
+      const stream = await navigator.mediaDevices.getUserMedia(constraints);
       localStreamRef.current = stream;
+      setLocalStream(stream);
+      console.log('[Call] got local stream, tracks:', stream.getTracks().map(t => t.kind));
       return stream;
     } catch (err) {
-      console.error('Media access error:', err);
+      console.error('[Call] requestMedia failed:', err);
       return null;
     }
   }, []);
 
+  const requestMediaRef = useRef(requestMedia);
+  useEffect(() => { requestMediaRef.current = requestMedia; }, [requestMedia]);
+
+  // Create/return RTCPeerConnection wired to signal the given peer
   const createPeerConnection = useCallback((targetUserId) => {
-    const pc = new RTCPeerConnection({ iceServers: [{ urls: 'stun:stun.l.google.com:19302' }] });
+    console.log('[Call] createPeerConnection → target:', targetUserId);
+    const pc = new RTCPeerConnection({
+      iceServers: [
+        { urls: 'stun:stun.l.google.com:19302' },
+        { urls: 'stun:stun1.l.google.com:19302' },
+      ],
+    });
+
     pc.onicecandidate = (e) => {
-      if (e.candidate) sendCallSignal(targetUserId, 'webrtc-ice-candidate', { candidate: e.candidate, senderId: user.id });
+      if (e.candidate) {
+        console.log('[Call] sending ICE candidate');
+        sendCallSignalRef.current(targetUserId, 'webrtc-ice-candidate', { candidate: e.candidate, senderId: user.id });
+      }
     };
-    pc.ontrack = (e) => setRemoteStream(e.streams[0]);
+
+    // Robust ontrack: handles both streams-attached and streams-less cases
+    pc.ontrack = (e) => {
+      console.log('[Call] ontrack', e.track.kind, 'streams:', e.streams.length,
+        'readyState:', e.track.readyState);
+
+      let stream;
+      if (e.streams && e.streams[0]) {
+        // Normal path: browser attached stream
+        stream = e.streams[0];
+      } else {
+        // Fallback: build/reuse a MediaStream and add the track manually
+        stream = remoteStreamRef.current || new MediaStream();
+        stream.addTrack(e.track);
+      }
+
+      remoteStreamRef.current = stream;
+      setRemoteStream(new MediaStream(stream.getTracks())); // new ref forces re-render
+
+      console.log('[Call] remote stream now has',
+        stream.getVideoTracks().length, 'video +',
+        stream.getAudioTracks().length, 'audio tracks');
+
+      // Directly attach to DOM as well (bypasses React state timing)
+      if (remoteVideoRef.current) {
+        remoteVideoRef.current.srcObject = stream;
+        remoteVideoRef.current.play().catch(e2 => console.warn('[Call] direct play:', e2));
+      }
+    };
+
+    pc.onconnectionstatechange = () => {
+      console.log('[Call] connectionState:', pc.connectionState);
+      if (pc.connectionState === 'connected') {
+        setCallStatus('connected');
+        setActiveCall(prev => prev ? { ...prev, status: 'connected' } : prev);
+      }
+      if (pc.connectionState === 'failed' || pc.connectionState === 'disconnected') {
+        console.warn('[Call] PeerConnection failed/disconnected — ending call');
+        setTimeout(() => {
+          if (peerConnectionRef.current?.connectionState !== 'connected') {
+            setActiveCall(null);
+            setIncomingCall(null);
+            cleanupCallRef.current();
+          }
+        }, 3000);
+      }
+    };
+
+    pc.oniceconnectionstatechange = () => {
+      console.log('[Call] iceConnectionState:', pc.iceConnectionState);
+    };
+
     peerConnectionRef.current = pc;
     return pc;
-  }, [user?.id, sendCallSignal]);
+  }, [user?.id]);
 
+  const createPeerConnectionRef = useRef(createPeerConnection);
+  useEffect(() => { createPeerConnectionRef.current = createPeerConnection; }, [createPeerConnection]);
+
+  // ── Incoming-call listener effect ─────────────────────────────
+  // Minimal deps: uses stable refs for all volatile state/fn access.
   useEffect(() => {
     if (!user?.id) return;
-    const channel = supabase.channel(`calls:${user.id}`, { config: { broadcast: { self: false } } });
-    
+
+    const channel = supabase.channel(`calls:${user.id}`, {
+      config: { broadcast: { self: false } },
+    });
+
+    // ── A) Incoming ring ─────────────────────────────────────────
     channel.on('broadcast', { event: 'call-offer' }, async ({ payload }) => {
-      const { data: isFriend } = await supabase.from('friends')
-        .select('*')
+      console.log('[Call] received call-offer from', payload.callerId);
+      const { data: isFriend } = await supabase
+        .from('friends')
+        .select('id')
         .eq('user_id', user.id)
         .eq('friend_id', payload.callerId)
         .maybeSingle();
 
-      if (!isFriend) {
-        console.warn('Blocked call from non-friend');
-        return;
-      }
-      setIncomingCall({ ...payload, status: 'calling' });
+      if (!isFriend) { console.warn('[Call] rejected call from non-friend'); return; }
+      if (activeCallRef.current) { console.log('[Call] busy — auto-rejecting'); return; }
+
+      setIncomingCall({ ...payload, status: 'ringing' });
+      setCallStatus('ringing');
+
+      ringTimeoutRef.current = setTimeout(() => {
+        console.log('[Call] ring timeout — clearing incoming');
+        setIncomingCall(null);
+        setCallStatus('idle');
+      }, 30_000);
     });
-    
+
+    // ── B) Caller receives: receiver accepted ─────────────────────
     channel.on('broadcast', { event: 'call-answer' }, async ({ payload }) => {
-      setActiveCall(prev => prev ? { ...prev, status: 'connected' } : prev);
-      
-      const stream = await requestMedia(payload.callType);
-      if (!stream) {
-        alert("Could not access camera/microphone. Call failed.");
-        sendCallSignal(payload.targetUserId, 'call-ended', payload);
-        cleanupMedia();
-        setActiveCall(null);
+      console.log('[Call] received call-answer, my role:', callRoleRef.current);
+      if (callRoleRef.current !== 'caller') {
+        console.log('[Call] ignoring call-answer (not caller)');
         return;
       }
 
-      if (user.id === payload.callerId) {
-        const pc = createPeerConnection(payload.targetUserId);
-        stream.getTracks().forEach(track => pc.addTrack(track, stream));
-        const offer = await pc.createOffer();
-        await pc.setLocalDescription(offer);
-        sendCallSignal(payload.targetUserId, 'webrtc-offer', { sdp: offer, senderId: user.id });
+      setCallStatus('connecting');
+      setActiveCall(prev => prev ? { ...prev, status: 'connecting' } : prev);
+
+      const callType = activeCallRef.current?.callType || payload.callType;
+      const stream   = await requestMediaRef.current(callType);
+      if (!stream) {
+        alert('Could not access microphone/camera. Call failed.');
+        sendCallSignalRef.current(payload.callerId, 'call-ended', {});
+        setActiveCall(null); setCallStatus('idle'); cleanupCallRef.current();
+        return;
       }
+
+      const receiverId = payload.callerId;
+      const pc = createPeerConnectionRef.current(receiverId);
+      stream.getTracks().forEach(track => pc.addTrack(track, stream));
+
+      const offer = await pc.createOffer();
+      await pc.setLocalDescription(offer);
+      console.log('[Call] caller sending webrtc-offer to', receiverId);
+      sendCallSignalRef.current(receiverId, 'webrtc-offer', { sdp: offer, senderId: user.id, callType });
     });
 
-    channel.on('broadcast', { event: 'call-ended' }, () => {
-      cleanupMedia();
-      setIncomingCall(null);
-      setActiveCall(null);
-    });
-    
-    channel.on('broadcast', { event: 'call-rejected' }, () => {
-      cleanupMedia();
-      setIncomingCall(null);
-      setActiveCall(null);
-    });
-
+    // ── C) Receiver gets the WebRTC offer ────────────────────────
     channel.on('broadcast', { event: 'webrtc-offer' }, async ({ payload }) => {
-      const pc = createPeerConnection(payload.senderId);
-      if (localStreamRef.current) localStreamRef.current.getTracks().forEach(t => pc.addTrack(t, localStreamRef.current));
-      await pc.setRemoteDescription(payload.sdp);
+      console.log('[Call] received webrtc-offer, my role:', callRoleRef.current);
+      if (callRoleRef.current !== 'receiver') {
+        console.log('[Call] ignoring webrtc-offer (not receiver)');
+        return;
+      }
+
+      if (!localStreamRef.current) {
+        const callType = activeCallRef.current?.callType || 'voice';
+        const stream = await requestMediaRef.current(callType);
+        if (!stream) {
+          alert('Could not access microphone/camera.');
+          sendCallSignalRef.current(payload.senderId, 'call-ended', {});
+          setActiveCall(null); setCallStatus('idle'); cleanupCallRef.current();
+          return;
+        }
+      }
+
+      const pc = createPeerConnectionRef.current(payload.senderId);
+      localStreamRef.current.getTracks().forEach(track => pc.addTrack(track, localStreamRef.current));
+
+      await pc.setRemoteDescription(new RTCSessionDescription(payload.sdp));
+
+      for (const c of pendingCandidates.current) {
+        try { await pc.addIceCandidate(c); } catch {}
+      }
+      pendingCandidates.current = [];
+
       const answer = await pc.createAnswer();
       await pc.setLocalDescription(answer);
-      sendCallSignal(payload.senderId, 'webrtc-answer', { sdp: answer, senderId: user.id });
+      console.log('[Call] receiver sending webrtc-answer to', payload.senderId);
+      sendCallSignalRef.current(payload.senderId, 'webrtc-answer', { sdp: answer, senderId: user.id });
     });
 
+    // ── D) Caller receives the answer ────────────────────────────
     channel.on('broadcast', { event: 'webrtc-answer' }, async ({ payload }) => {
-      if (peerConnectionRef.current) await peerConnectionRef.current.setRemoteDescription(payload.sdp);
-    });
-
-    channel.on('broadcast', { event: 'webrtc-ice-candidate' }, async ({ payload }) => {
-      if (peerConnectionRef.current && payload.candidate) {
-        try { await peerConnectionRef.current.addIceCandidate(payload.candidate); } catch (e) {}
+      console.log('[Call] received webrtc-answer, my role:', callRoleRef.current);
+      if (callRoleRef.current !== 'caller') {
+        console.log('[Call] ignoring webrtc-answer (not caller)');
+        return;
+      }
+      if (peerConnectionRef.current) {
+        await peerConnectionRef.current.setRemoteDescription(new RTCSessionDescription(payload.sdp));
+        for (const c of pendingCandidates.current) {
+          try { await peerConnectionRef.current.addIceCandidate(c); } catch {}
+        }
+        pendingCandidates.current = [];
+        console.log('[Call] caller set remote description — WebRTC handshake complete');
       }
     });
 
-    channel.subscribe();
-    return () => supabase.removeChannel(channel);
-  }, [user?.id, cleanupMedia, requestMedia, createPeerConnection, sendCallSignal]);
+    // ── E) ICE candidate exchange ────────────────────────────────
+    channel.on('broadcast', { event: 'webrtc-ice-candidate' }, async ({ payload }) => {
+      if (!payload.candidate) return;
+      const pc = peerConnectionRef.current;
+      if (pc && pc.remoteDescription) {
+        try { await pc.addIceCandidate(new RTCIceCandidate(payload.candidate)); }
+        catch (e) { console.warn('[Call] addIceCandidate error:', e); }
+      } else {
+        console.log('[Call] queuing ICE candidate (no remote desc yet)');
+        pendingCandidates.current.push(new RTCIceCandidate(payload.candidate));
+      }
+    });
 
+    // ── F) Call ended by remote ──────────────────────────────────
+    channel.on('broadcast', { event: 'call-ended' }, () => {
+      console.log('[Call] received call-ended from remote');
+      setIncomingCall(null); setActiveCall(null);
+      cleanupCallRef.current();
+    });
+
+    // ── G) Call rejected by receiver ─────────────────────────────
+    channel.on('broadcast', { event: 'call-rejected' }, () => {
+      console.log('[Call] received call-rejected');
+      setIncomingCall(null); setActiveCall(null);
+      cleanupCallRef.current();
+    });
+
+    channel.subscribe((status) => {
+      console.log('[Call] personal channel status:', status);
+    });
+
+    return () => {
+      console.log('[Call] removing personal call channel');
+      supabase.removeChannel(channel);
+    };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [user?.id]); // intentionally minimal — handlers use refs for volatile access
+
+  // ── startCall: caller initiates ─────────────────────────────
   const startCall = (type, targetUser) => {
     if (!targetUser) return;
+    console.log('[Call] startCall type:', type, 'target:', targetUser.id);
+    callRoleRef.current = 'caller';
     const callData = {
-      callerId: user.id,
-      callerName: user.user_metadata?.display_name || user.email?.split('@')[0] || user.username || 'User',
-      targetUserId: targetUser.id,
+      callerId:       user.id,
+      callerName:     user.user_metadata?.display_name || user.email?.split('@')[0] || 'User',
+      targetUserId:   targetUser.id,
       targetUserName: targetUser.display_name || targetUser.username,
-      callType: type
+      callType:       type,
+      status:         'ringing',
     };
-    setActiveCall({ ...callData, status: 'calling' });
+    activeCallRef.current = callData;
+    setActiveCall(callData);
+    setCallStatus('ringing');
     sendCallSignal(targetUser.id, 'call-offer', callData);
+
+    // Auto-cancel if no answer in 30 s
+    ringTimeoutRef.current = setTimeout(() => {
+      if (callRoleRef.current === 'caller' && callStatus !== 'connected') {
+        console.log('[Call] ring timeout — no answer');
+        sendCallSignal(targetUser.id, 'call-ended', {});
+        setActiveCall(null);
+        setCallStatus('idle');
+        cleanupCall();
+      }
+    }, 30_000);
   };
 
-  const acceptCall = () => {
+  // ── acceptCall: receiver accepts ─────────────────────────────
+  const acceptCall = async () => {
     if (!incomingCall) return;
-    const updatedCall = { ...incomingCall, status: 'connected' };
-    setActiveCall(updatedCall);
-    sendCallSignal(incomingCall.callerId, 'call-answer', updatedCall);
+    console.log('[Call] acceptCall — acquiring media for', incomingCall.callType);
+
+    // Clear ring timeout
+    if (ringTimeoutRef.current) { clearTimeout(ringTimeoutRef.current); ringTimeoutRef.current = null; }
+
+    callRoleRef.current   = 'receiver';
+    const callData        = { ...incomingCall, status: 'connecting' };
+    activeCallRef.current = callData;
+
+    // Clear incoming (hides ring modal) BEFORE async work
     setIncomingCall(null);
+    setActiveCall(callData);   // show call screen immediately
+    setCallStatus('connecting');
+
+    // Receiver acquires media NOW (before offer arrives)
+    const stream = await requestMedia(incomingCall.callType);
+    if (!stream) {
+      alert('Could not access microphone/camera. Rejecting call.');
+      sendCallSignal(incomingCall.callerId, 'call-rejected', {});
+      setActiveCall(null);
+      setCallStatus('idle');
+      activeCallRef.current = null;
+      callRoleRef.current   = null;
+      return;
+    }
+
+    // Signal caller that receiver accepted
+    sendCallSignal(incomingCall.callerId, 'call-answer', {
+      ...callData,
+      callerId: incomingCall.callerId,   // preserve original callerId so caller identifies itself
+    });
+
+    console.log('[Call] acceptCall complete — waiting for webrtc-offer from caller');
   };
 
+  // ── rejectCall ───────────────────────────────────────────────
   const rejectCall = () => {
     if (!incomingCall) return;
-    sendCallSignal(incomingCall.callerId, 'call-rejected', { ...incomingCall });
+    console.log('[Call] rejectCall');
+    if (ringTimeoutRef.current) { clearTimeout(ringTimeoutRef.current); ringTimeoutRef.current = null; }
+    sendCallSignal(incomingCall.callerId, 'call-rejected', {});
     setIncomingCall(null);
+    setCallStatus('idle');
   };
 
+  // ── endCall ──────────────────────────────────────────────────
   const endCall = () => {
-    if (!activeCall) return;
-    const targetId = activeCall.callerId === user.id ? activeCall.targetUserId : activeCall.callerId;
-    sendCallSignal(targetId, 'call-ended', { ...activeCall });
+    if (!activeCallRef.current && !activeCall) return;
+    const call = activeCallRef.current || activeCall;
+    console.log('[Call] endCall, role:', callRoleRef.current);
+    const targetId = call.callerId === user.id ? call.targetUserId : call.callerId;
+    sendCallSignal(targetId, 'call-ended', {});
     setActiveCall(null);
+    setIncomingCall(null);
+    cleanupCall();
   };
 
   const loadData = useCallback(async () => {
@@ -2304,59 +2575,134 @@ export default function UserHome() {
         {activeTab === 'settings' && <SettingsTab totalSongs={allSongs.length} favCount={favoriteIds.length} myUploadsCount={mySongs.length} privateKey={privateKey} myPublicKey={myPublicKey} />}
       </main>
 
-      {/* ── Global Call Overlays ── */}
-      {incomingCall && incomingCall.status === 'calling' && (
+      {/* ── Incoming Call Ring ── */}
+      {incomingCall && (
         <div className="call-overlay">
           <div className="call-modal">
-            <h3>Incoming {incomingCall.callType} Call</h3>
-            <p>from {incomingCall.callerName}</p>
+            <div style={{ fontSize: '2.5rem', marginBottom: '12px' }}>
+              {incomingCall.callType === 'video' ? '📹' : '📞'}
+            </div>
+            <h3>Incoming {incomingCall.callType === 'video' ? 'Video' : 'Voice'} Call</h3>
+            <p style={{ marginBottom: '4px' }}>{incomingCall.callerName}</p>
+            <p style={{ fontSize: '0.8rem', color: 'rgba(255,255,255,0.5)', marginBottom: '20px' }}>Ringing...</p>
             <div className="call-actions">
-              <button className="btn-accept" onClick={acceptCall}>Accept</button>
-              <button className="btn-reject" onClick={rejectCall}>Reject</button>
+              <button className="btn-accept" onClick={acceptCall}>✅ Accept</button>
+              <button className="btn-reject" onClick={rejectCall}>❌ Reject</button>
             </div>
           </div>
         </div>
       )}
 
+      {/* ── Active Call Screen ──
+           IMPORTANT: Video elements are always mounted when activeCall exists,
+           never conditionally removed, so srcObject is never lost on re-render.
+      */}
       {activeCall && (
         <div className="call-overlay active-call-overlay">
-          <div className="call-modal" style={{ width: '90%', maxWidth: '800px', height: '80vh', display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
-            <h3 style={{ marginBottom: '10px' }}>{activeCall.status === 'calling' ? 'Calling...' : 'Connected'}</h3>
-            <p style={{ marginBottom: '10px' }}>{activeCall.targetUserId === user.id ? activeCall.callerName : activeCall.targetUserName}</p>
-            <p style={{ fontSize: '0.8rem', color: '#00ff88', marginBottom: '10px' }}>🔒 End-to-end encrypted</p>
-            
-            <div style={{ flex: 1, position: 'relative', background: '#000', borderRadius: '12px', overflow: 'hidden', marginBottom: '20px', minHeight: '300px' }}>
-              <video 
-                ref={remoteVideoRef} 
-                autoPlay 
-                playsInline 
-                style={{ 
-                  width: '100%', height: '100%', objectFit: 'cover', 
-                  opacity: activeCall.callType === 'video' ? 1 : 0,
-                  position: activeCall.callType === 'video' ? 'relative' : 'absolute' 
-                }} 
+          <div className="call-modal" style={{
+            width: '90%', maxWidth: '800px', height: '80vh',
+            display: 'flex', flexDirection: 'column', overflow: 'hidden'
+          }}>
+
+            {/* Status header */}
+            <h3 style={{ marginBottom: '6px', flexShrink: 0 }}>
+              {callStatus === 'ringing'    ? '📞 Ringing...' :
+               callStatus === 'connecting' ? '⏳ Connecting...' :
+               callStatus === 'connected'  ? '🟢 Connected' : 'Call'}
+            </h3>
+            <p style={{ marginBottom: '4px', flexShrink: 0 }}>
+              {activeCall.targetUserId === user.id ? activeCall.callerName : activeCall.targetUserName}
+            </p>
+            <p style={{ fontSize: '0.8rem', color: '#00ff88', marginBottom: '10px', flexShrink: 0 }}>
+              🔒 End-to-end encrypted
+            </p>
+
+            {/* Video / Voice area */}
+            <div style={{
+              flex: 1, position: 'relative', background: '#111',
+              borderRadius: '12px', overflow: 'hidden',
+              marginBottom: '16px', minHeight: '180px'
+            }}>
+
+              {/* ── Remote video ──
+                  Always rendered. Hidden via CSS for voice calls.
+                  Using callback ref so srcObject survives React remounts.
+              */}
+              <video
+                ref={attachRemoteVideoRef}
+                autoPlay
+                playsInline
+                style={{
+                  position: 'absolute',
+                  inset: 0,
+                  width: '100%',
+                  height: '100%',
+                  objectFit: 'cover',
+                  display: activeCall.callType === 'video' ? 'block' : 'none',
+                  zIndex: 1,
+                }}
               />
-              
+
+              {/* Hidden audio element – plays remote audio for VOICE calls
+                  (for video calls, audio comes through the video element above) */}
+              <audio
+                ref={remoteAudioRef}
+                autoPlay
+                playsInline
+                style={{ display: 'none' }}
+              />
+
+              {/* Voice call UI */}
               {activeCall.callType === 'voice' && (
-                 <div style={{ position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#fff', fontSize: '2rem' }}>🎙️ Voice Call</div>
+                <div style={{
+                  position: 'absolute', inset: 0, zIndex: 2,
+                  display: 'flex', flexDirection: 'column',
+                  alignItems: 'center', justifyContent: 'center',
+                  color: '#fff', gap: '12px'
+                }}>
+                  <div style={{ fontSize: '4rem' }}>🎙️</div>
+                  <p style={{ fontSize: '1rem', opacity: 0.7 }}>
+                    {callStatus === 'connected' ? 'Voice call active' : 'Connecting audio...'}
+                  </p>
+                  {remoteStream && callStatus === 'connected' && (
+                    <p style={{ fontSize: '0.75rem', color: '#4ade80' }}>● Audio connected</p>
+                  )}
+                </div>
               )}
-              {activeCall.callType === 'video' && !remoteStream && activeCall.status === 'connected' && (
-                 <div style={{ position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#fff', fontSize: '1.2rem' }}>Connecting media...</div>
+
+              {/* Video call: connecting placeholder (shown until remote video arrives) */}
+              {activeCall.callType === 'video' && !remoteStream && (
+                <div style={{
+                  position: 'absolute', inset: 0, zIndex: 2,
+                  display: 'flex', flexDirection: 'column',
+                  alignItems: 'center', justifyContent: 'center',
+                  color: 'rgba(255,255,255,0.6)', gap: '8px'
+                }}>
+                  <div style={{ fontSize: '2rem' }}>📹</div>
+                  <p style={{ fontSize: '0.9rem' }}>Connecting video...</p>
+                </div>
               )}
-              
+
+              {/* Local video preview – bottom-right pip, video calls only */}
               {activeCall.callType === 'video' && (
-                <video 
-                  ref={localVideoRef} 
-                  autoPlay 
-                  playsInline 
-                  muted 
-                  style={{ position: 'absolute', bottom: '20px', right: '20px', width: '120px', height: '160px', objectFit: 'cover', borderRadius: '8px', border: '2px solid rgba(255,255,255,0.5)', background: '#222' }} 
+                <video
+                  ref={attachLocalVideoRef}
+                  autoPlay
+                  playsInline
+                  muted
+                  style={{
+                    position: 'absolute', bottom: '12px', right: '12px',
+                    width: '110px', height: '148px',
+                    objectFit: 'cover', borderRadius: '8px',
+                    border: '2px solid rgba(255,255,255,0.35)',
+                    background: '#222', zIndex: 3,
+                  }}
                 />
               )}
             </div>
 
-            <div className="call-actions" style={{ paddingBottom: '10px' }}>
-              <button className="btn-reject" onClick={endCall}>End Call</button>
+            <div className="call-actions" style={{ paddingBottom: '10px', flexShrink: 0 }}>
+              <button className="btn-reject" onClick={endCall}>📵 End Call</button>
             </div>
           </div>
         </div>
