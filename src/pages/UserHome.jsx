@@ -1723,13 +1723,15 @@ function ChatTab({ startCall, privateKey, myPublicKey }) {
     return (
       <div className="chat-conversation" aria-labelledby="tab-chat">
         <div className="chat-conversation-header">
-          <button className="chat-back-btn" onClick={() => setSelectedFriend(null)}>
-            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="15 18 9 12 15 6"></polyline></svg>
-          </button>
-          <div className="chat-header-avatar">👤</div>
-          <div className="chat-header-info">
-            <h2 className="chat-thread-name">{selectedFriend.display_name || selectedFriend.username}</h2>
-            <span className="chat-thread-username">@{selectedFriend.username}</span>
+          <div className="chat-header-left">
+            <button className="chat-back-btn" onClick={() => setSelectedFriend(null)}>
+              <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="15 18 9 12 15 6"></polyline></svg>
+            </button>
+            <div className="chat-header-avatar">👤</div>
+            <div className="chat-header-info">
+              <h2 className="chat-thread-name">{selectedFriend.display_name || selectedFriend.username}</h2>
+              <span className="chat-thread-username">@{selectedFriend.username}</span>
+            </div>
           </div>
           <div className="chat-header-actions">
             <button className="chat-header-icon" onClick={() => {
