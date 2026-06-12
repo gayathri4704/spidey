@@ -2708,7 +2708,10 @@ export default function UserHome() {
       
       {/* ── Top Header with Search Toggle ── */}
       <header className="dashboard-topbar" role="banner">
-        <div className="topbar-logo">SPIDEY</div>
+        <div className="topbar-logo" style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+          <img src="/spidey-logo.svg" alt="Spidey Logo" style={{ width: '28px', height: '28px', filter: 'drop-shadow(0 2px 4px rgba(223,1,57,0.4))' }} />
+          SPIDEY
+        </div>
         <div className="topbar-right">
           <button
             id="topbar-search-btn"
