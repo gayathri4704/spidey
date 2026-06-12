@@ -5,20 +5,41 @@
 
     <!-- Primary favicon -->
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
-    <link rel="icon" type="image/png" sizes="192x192" href="/icon-192.png" />
+    <link rel="icon" type="image/png" sizes="192x192" href="/icons/icon-192.png" />
 
-    <!-- PWA essentials -->
+    <!-- ─── Viewport (viewport-fit=cover for iPhone notch/Dynamic Island) ─── -->
     <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
-    <meta name="theme-color" content="#c0392b" />
-    <meta name="mobile-web-app-capable" content="yes" />
-    <meta name="apple-mobile-web-app-capable" content="yes" />
-    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
-    <meta name="apple-mobile-web-app-title" content="Spidey" />
-    <link rel="apple-touch-icon" href="/icon-192.png" />
 
-    <!-- SEO / Open Graph -->
-    <meta name="description" content="Spidey – Your friendly neighbourhood music app. Upload songs, build playlists, and listen offline." />
+    <!-- ─── PWA Manifest ────────────────────────────────────────────────── -->
+    <link rel="manifest" href="/manifest.webmanifest" />
+
+    <!-- ─── Theme colour (Android Chrome toolbar + PWA splash) ──────────── -->
+    <meta name="theme-color" content="#df0139" />
+
+    <!-- ─── Android / Chrome PWA ────────────────────────────────────────── -->
+    <meta name="mobile-web-app-capable" content="yes" />
+
+    <!-- ─── Apple iOS / iPadOS PWA ──────────────────────────────────────── -->
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-title" content="Spidey" />
+    <!-- black-translucent = status bar overlays the app, giving true full-screen -->
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+    <!-- Apple touch icon (used for Home Screen bookmark on iOS/iPadOS) -->
+    <link rel="apple-touch-icon" href="/icons/apple-touch-icon.png" />
+
+    <!-- ─── Windows / MS Tiles ───────────────────────────────────────────── -->
+    <meta name="msapplication-TileColor" content="#df0139" />
+    <meta name="msapplication-TileImage" content="/icons/icon-192.png" />
+
+    <!-- ─── SEO / Open Graph ─────────────────────────────────────────────── -->
+    <meta name="description" content="Spidey – music, chat, calls and todo app. Your friendly neighbourhood app." />
     <meta name="application-name" content="Spidey" />
+
+    <!-- ─── Open Graph (share previews) ─────────────────────────────────── -->
+    <meta property="og:title"       content="Spidey" />
+    <meta property="og:description" content="Spidey – music, chat, calls and todo app." />
+    <meta property="og:type"        content="website" />
+    <meta property="og:image"       content="/icons/icon-512.png" />
 
     <title>Spidey</title>
   </head>

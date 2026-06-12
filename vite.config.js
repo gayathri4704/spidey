@@ -9,16 +9,13 @@ export default defineConfig({
 
     VitePWA({
       // ── Registration strategy ─────────────────────────
-      // 'autoUpdate'  → service worker updates silently in the background.
-      // The new SW takes over on the next page reload.
+      // 'autoUpdate' → service worker updates silently in background.
       registerType: 'autoUpdate',
 
-      // Include the virtual SW entry point in the build
+      // Inject SW registration automatically
       injectRegister: 'auto',
 
       // ── Dev mode ─────────────────────────────────────
-      // Keep PWA active during `npm run dev` so you can
-      // inspect the service worker in DevTools.
       devOptions: {
         enabled: true,
         type: 'module',
@@ -28,31 +25,29 @@ export default defineConfig({
       manifest: {
         name:             'Spidey',
         short_name:       'Spidey',
-        description:      'Your friendly neighbourhood music app. Upload songs, build playlists, go offline.',
+        description:      'Spidey music, chat and todo app',
         start_url:        '/',
+        scope:            '/',
         display:          'standalone',
-        orientation:      'portrait-primary',
-        background_color: '#0a0c14',   // --bg-primary (dark navy)
-        theme_color:      '#c0392b',   // --spidey-red
+        orientation:      'portrait',
+        background_color: '#1e1e27',
+        theme_color:      '#df0139',
 
         icons: [
           {
-            src:     '/icon-192.png',
+            src:     '/icons/icon-192.png',
             sizes:   '192x192',
             type:    'image/png',
             purpose: 'any',
           },
           {
-            src:     '/icon-512.png',
+            src:     '/icons/icon-512.png',
             sizes:   '512x512',
             type:    'image/png',
             purpose: 'any',
           },
           {
-            // Maskable variant uses the same 512 image.
-            // Works with safe-zone padding since the icon
-            // has a dark background that fills to the edges.
-            src:     '/icon-512.png',
+            src:     '/icons/maskable-512.png',
             sizes:   '512x512',
             type:    'image/png',
             purpose: 'maskable',
@@ -60,79 +55,90 @@ export default defineConfig({
         ],
 
         // Additional platform metadata
-        categories: ['music', 'entertainment'],
+        categories: ['music', 'entertainment', 'social'],
         lang:       'en',
       },
 
       // ── Workbox (service worker) configuration ───────
       workbox: {
-        // ── App Shell caching strategy ────────────────
-        // Cache all pre-built assets (JS, CSS, HTML, SVG, fonts).
-        // These are the files that Vite emits into dist/.
+        // ── App Shell pre-caching ─────────────────────
+        // Cache all pre-built static assets emitted by Vite.
         globPatterns: [
           '**/*.{js,css,html,svg,png,ico,woff,woff2,ttf,eot}',
         ],
 
+        // ── URLs to NEVER cache ───────────────────────
+        // Supabase REST/Auth/Realtime, WebRTC STUN, any upload endpoint.
+        navigateFallbackDenylist: [
+          /^\/rest\//,
+          /^\/auth\//,
+          /^\/realtime\//,
+          /^\/storage\//,
+        ],
+
         // ── Runtime caching rules ─────────────────────
         runtimeCaching: [
-          // 1. Google Fonts stylesheets
+          // 1. Block Supabase API/Auth/Realtime — always go to network
+          {
+            urlPattern: /supabase\.co\/(rest|auth|realtime|storage)/i,
+            handler:    'NetworkOnly',
+          },
+
+          // 2. Block WebRTC STUN servers
+          {
+            urlPattern: /stun\.l\.google\.com/i,
+            handler:    'NetworkOnly',
+          },
+
+          // 3. Google Fonts stylesheets
           {
             urlPattern: /^https:\/\/fonts\.googleapis\.com\/.*/i,
-            handler: 'StaleWhileRevalidate',
+            handler:    'StaleWhileRevalidate',
             options: {
-              cacheName:          'google-fonts-stylesheets',
+              cacheName: 'google-fonts-stylesheets',
               expiration: {
-                maxEntries:       10,
-                maxAgeSeconds:    60 * 60 * 24 * 365, // 1 year
+                maxEntries:    10,
+                maxAgeSeconds: 60 * 60 * 24 * 365, // 1 year
               },
               cacheableResponse: { statuses: [0, 200] },
             },
           },
 
-          // 2. Google Fonts files (woff/woff2)
+          // 4. Google Fonts files (woff/woff2)
           {
             urlPattern: /^https:\/\/fonts\.gstatic\.com\/.*/i,
-            handler: 'CacheFirst',
+            handler:    'CacheFirst',
             options: {
-              cacheName:          'google-fonts-webfonts',
+              cacheName: 'google-fonts-webfonts',
               expiration: {
-                maxEntries:       30,
-                maxAgeSeconds:    60 * 60 * 24 * 365, // 1 year
+                maxEntries:    30,
+                maxAgeSeconds: 60 * 60 * 24 * 365,
               },
               cacheableResponse: { statuses: [0, 200] },
             },
           },
 
-          // 3. App navigation fallback
-          // Any navigation request that isn't pre-cached returns index.html
-          // so the React SPA always loads (even offline).
+          // 5. App navigation fallback
+          // Any navigate request that isn't pre-cached → return index.html
           {
             urlPattern: ({ request }) => request.mode === 'navigate',
-            handler: 'NetworkFirst',
+            handler:    'NetworkFirst',
             options: {
-              cacheName:          'pages',
+              cacheName:             'pages',
               networkTimeoutSeconds: 3,
               expiration: {
-                maxEntries:       10,
-                maxAgeSeconds:    60 * 60 * 24 * 7, // 1 week
+                maxEntries:    10,
+                maxAgeSeconds: 60 * 60 * 24 * 7, // 1 week
               },
             },
           },
         ],
-
-        // ── IndexedDB note ────────────────────────────
-        // Audio Blobs uploaded by the user live in IndexedDB
-        // (managed by src/db/spideyDB.js). The service worker
-        // does NOT intercept or cache those – they persist
-        // natively in the browser's storage and are available
-        // offline automatically via IDB.
 
         // Skip waiting so the new SW activates immediately
         skipWaiting:  true,
         clientsClaim: true,
 
-        // Increase the size warning threshold because
-        // some audio blobs may be large
+        // Increase size warning (audio blobs can be large)
         maximumFileSizeToCacheInBytes: 5 * 1024 * 1024, // 5 MB
       },
     }),

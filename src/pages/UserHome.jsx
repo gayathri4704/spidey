@@ -1915,6 +1915,172 @@ function ChatTab({ startCall, privateKey, myPublicKey }) {
   );
 }
 
+// ── InstallAppSection ─────────────────────────────────────────
+function InstallAppSection() {
+  const [installPrompt, setInstallPrompt] = useState(null);
+  const [installDone,   setInstallDone]   = useState(false);
+  const [isIOS, setIsIOS] = useState(false);
+  const [isStandalone, setIsStandalone] = useState(false);
+
+  useEffect(() => {
+    // Detect iOS/iPadOS
+    const ios = /iPad|iPhone|iPod/.test(navigator.userAgent) && !window.MSStream;
+    setIsIOS(ios);
+
+    // Detect already installed (standalone mode)
+    const standalone =
+      window.matchMedia('(display-mode: standalone)').matches ||
+      window.navigator.standalone === true;
+    setIsStandalone(standalone);
+
+    // Listen for Chrome/Android install prompt
+    const handler = (e) => {
+      e.preventDefault();
+      setInstallPrompt(e);
+    };
+    window.addEventListener('beforeinstallprompt', handler);
+    return () => window.removeEventListener('beforeinstallprompt', handler);
+  }, []);
+
+  const handleInstall = async () => {
+    if (!installPrompt) return;
+    installPrompt.prompt();
+    const { outcome } = await installPrompt.userChoice;
+    console.log('[PWA] install outcome:', outcome);
+    if (outcome === 'accepted') {
+      setInstallDone(true);
+      setInstallPrompt(null);
+    }
+  };
+
+  const cardStyle = {
+    background: 'rgba(223,1,57,0.07)',
+    border: '1px solid rgba(223,1,57,0.25)',
+    borderRadius: '14px',
+    padding: '1.1rem 1.2rem',
+    display: 'flex',
+    flexDirection: 'column',
+    gap: '0.7rem',
+  };
+
+  const stepStyle = {
+    display: 'flex',
+    alignItems: 'flex-start',
+    gap: '0.6rem',
+    fontSize: '0.88rem',
+    color: 'var(--text-secondary)',
+    lineHeight: 1.5,
+  };
+
+  const numStyle = {
+    background: 'rgba(223,1,57,0.2)',
+    color: '#ff6b8a',
+    borderRadius: '50%',
+    width: 22, height: 22,
+    display: 'flex', alignItems: 'center', justifyContent: 'center',
+    fontSize: '0.75rem', fontWeight: 700, flexShrink: 0, marginTop: 1,
+  };
+
+  if (isStandalone) {
+    return (
+      <div className="dash-section">
+        <h2 className="dash-section-title">📲 Install Spidey App</h2>
+        <div style={cardStyle}>
+          <p style={{ margin: 0, fontSize: '0.9rem', color: '#4ade80' }}>
+            ✅ Spidey is already installed as an app on this device!
+          </p>
+        </div>
+      </div>
+    );
+  }
+
+  if (installDone) {
+    return (
+      <div className="dash-section">
+        <h2 className="dash-section-title">📲 Install Spidey App</h2>
+        <div style={cardStyle}>
+          <p style={{ margin: 0, fontSize: '0.9rem', color: '#4ade80' }}>
+            ✅ Spidey installed! Open it from your Home Screen.
+          </p>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="dash-section">
+      <h2 className="dash-section-title">📲 Install Spidey App</h2>
+      <div style={cardStyle}>
+        <p style={{ margin: 0, fontSize: '0.88rem', color: 'var(--text-muted)' }}>
+          Install Spidey on your device for a full-screen app experience — no browser bar.
+        </p>
+
+        {/* Android Chrome: show one-tap install button */}
+        {installPrompt && (
+          <button
+            id="pwa-install-btn"
+            onClick={handleInstall}
+            style={{
+              display: 'flex', alignItems: 'center', gap: '8px',
+              padding: '10px 18px',
+              background: 'linear-gradient(135deg, #df0139, #8b0000)',
+              border: 'none', borderRadius: '50px',
+              color: '#fff', fontWeight: 700, fontSize: '0.9rem',
+              cursor: 'pointer', width: 'fit-content',
+              boxShadow: '0 4px 16px rgba(223,1,57,0.35)',
+              transition: 'all 0.2s',
+            }}
+          >
+            📲 Install Spidey App
+          </button>
+        )}
+
+        {/* Android Chrome (no prompt yet) */}
+        {!installPrompt && !isIOS && (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '0.55rem' }}>
+            <p style={{ margin: 0, fontSize: '0.82rem', color: 'var(--text-muted)', fontWeight: 600 }}>
+              🤖 Android — Chrome
+            </p>
+            <div style={stepStyle}><span style={numStyle}>1</span> Open Spidey in <strong>Chrome</strong></div>
+            <div style={stepStyle}><span style={numStyle}>2</span> Tap the <strong>⋮ menu</strong> (top right)</div>
+            <div style={stepStyle}><span style={numStyle}>3</span> Tap <strong>"Install app"</strong> or <strong>"Add to Home screen"</strong></div>
+            <div style={stepStyle}><span style={numStyle}>4</span> Tap <strong>Install</strong> to confirm</div>
+          </div>
+        )}
+
+        {/* iPhone / iPad */}
+        {isIOS && (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '0.55rem' }}>
+            <p style={{ margin: 0, fontSize: '0.82rem', color: 'var(--text-muted)', fontWeight: 600 }}>
+              🍎 iPhone / iPad — Safari
+            </p>
+            <div style={stepStyle}><span style={numStyle}>1</span> Open Spidey in <strong>Safari</strong> (not Chrome)</div>
+            <div style={stepStyle}><span style={numStyle}>2</span> Tap the <strong>Share ↑</strong> button at the bottom</div>
+            <div style={stepStyle}><span style={numStyle}>3</span> Scroll down and tap <strong>"Add to Home Screen"</strong></div>
+            <div style={stepStyle}><span style={numStyle}>4</span> Tap <strong>Add</strong> in the top right</div>
+            <p style={{ margin: '4px 0 0', fontSize: '0.78rem', color: 'var(--text-muted)', fontStyle: 'italic' }}>
+              Works on iPhone 14, 15, 16, 17 and all iPads with iOS/iPadOS 16.4+
+            </p>
+          </div>
+        )}
+
+        {/* Show both when not on iOS and no prompt */}
+        {!installPrompt && !isIOS && (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '0.55rem', marginTop: '0.5rem' }}>
+            <p style={{ margin: 0, fontSize: '0.82rem', color: 'var(--text-muted)', fontWeight: 600 }}>
+              🍎 iPhone / iPad — Safari
+            </p>
+            <div style={stepStyle}><span style={numStyle}>1</span> Open Spidey in <strong>Safari</strong></div>
+            <div style={stepStyle}><span style={numStyle}>2</span> Tap the <strong>Share ↑</strong> button</div>
+            <div style={stepStyle}><span style={numStyle}>3</span> Tap <strong>"Add to Home Screen"</strong></div>
+            <div style={stepStyle}><span style={numStyle}>4</span> Tap <strong>Add</strong></div>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
 // ── SettingsTab (was ProfileTab) ─────────────────────────────
 function SettingsTab({ totalSongs, favCount, myUploadsCount, privateKey, myPublicKey }) {
   const { user, logout } = useAuth();
@@ -1983,6 +2149,9 @@ function SettingsTab({ totalSongs, favCount, myUploadsCount, privateKey, myPubli
           }} style={{ width: 'fit-content' }}>Verify Friend</button>
         </div>
       </div>
+
+      {/* ── Install Spidey App ────────────────────────────────── */}
+      <InstallAppSection />
 
       <div className="dash-section">
         <h2 className="dash-section-title">⚙️ Account</h2>

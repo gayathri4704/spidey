@@ -2511,3 +2511,53 @@
     opacity: 0.6;
   }
 }
+
+/* =========================================
+   PWA Standalone Mode Tweaks
+   Applied when app is installed and running
+   from Home Screen (no browser chrome)
+   ========================================= */
+
+@media (display-mode: standalone) {
+  /* Topbar: extra top padding for Dynamic Island / notch on iPhone */
+  .dashboard-topbar {
+    padding-top: env(safe-area-inset-top);
+    height: calc(56px + env(safe-area-inset-top));
+  }
+
+  /* Body scroll area: account for status bar at top */
+  .dashboard-body {
+    padding-top: 0; /* topbar already handles it */
+  }
+
+  /* Bottom nav: taller to clear home indicator on iPhone */
+  .bottom-nav {
+    height: calc(65px + env(safe-area-inset-bottom));
+    padding-bottom: env(safe-area-inset-bottom);
+  }
+
+  /* Fix select/input dark background for mobile */
+  select,
+  input,
+  textarea {
+    -webkit-appearance: none;
+    appearance: none;
+  }
+
+  /* Prevent rubber-band scroll on iOS in standalone */
+  html, body {
+    overscroll-behavior: none;
+    -webkit-overflow-scrolling: touch;
+  }
+}
+
+/* iOS Safari specific: prevent double-tap zoom on buttons */
+button, a {
+  touch-action: manipulation;
+}
+
+/* Prevent text size adjust on orientation change */
+html {
+  -webkit-text-size-adjust: 100%;
+  text-size-adjust: 100%;
+}
