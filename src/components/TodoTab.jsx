@@ -288,40 +288,94 @@ export default function TodoTab() {
   }, []);
 
   /* ── Notification fire helper ── */
-  const firePopup = useCallback((key, title, body) => {
-    const now    = Date.now();
-    if (snoozeUntil.current[key] && snoozeUntil.current[key] > now) return;
-    const dayKey = `${key}__${todayStr()}`;
-    if (shownToday.current.has(dayKey)) return;
-    shownToday.current.add(dayKey);
+  const firePopup = useCallback(async (key, title, body) => {
+    const now = Date.now();
+    const today = todayStr();
+    
+    // Read from localStorage directly
+    const snoozeData = JSON.parse(localStorage.getItem('spidey_reminder_snooze') || '{}');
+    if (snoozeData[key] && snoozeData[key] > now) return;
+
+    const shownData = JSON.parse(localStorage.getItem('spidey_reminder_shown') || '{}');
+    const dayKey = `${key}__${today}`;
+    if (shownData[dayKey]) return;
+
+    // Mark as shown
+    shownData[dayKey] = true;
+    localStorage.setItem('spidey_reminder_shown', JSON.stringify(shownData));
+
+    console.log(`[Reminder] triggered task/meal/medicine/water: ${key} - ${title}`);
     setActivePopup({ key, title, body });
+    console.log(`[Reminder] in-app popup shown`);
+
     if (notifPerm === 'granted') {
-      try { new Notification(title, { body, icon: '/favicon.ico' }); } catch {}
+      try {
+        if ('serviceWorker' in navigator) {
+          const reg = await navigator.serviceWorker.getRegistration();
+          if (reg && 'showNotification' in reg) {
+            await reg.showNotification(title, { body, icon: '/icons/icon-192.png', tag: key });
+            console.log(`[Reminder] browser notification shown via SW`);
+            return;
+          }
+        }
+        new Notification(title, { body, icon: '/icons/icon-192.png' });
+        console.log(`[Reminder] browser notification shown natively`);
+      } catch (err) {
+        console.error('[Reminder] notify error:', err);
+      }
     }
   }, [notifPerm]);
 
   /* ── Scheduler (every 30 s) ── */
   useEffect(() => {
+    console.log('[Reminder] scheduler running');
     const tick = () => {
       const now   = new Date();
       const hhmm  = `${String(now.getHours()).padStart(2,'0')}:${String(now.getMinutes()).padStart(2,'0')}`;
       const today = todayStr();
+      
+      // Tasks
       tasks.forEach(t => {
         if (!t.reminder || t.completed) return;
-        if (t.dueDate === today && t.dueTime === hhmm)
+        
+        let shouldTrigger = false;
+        if (t.repeat === 'daily') {
+          shouldTrigger = (t.dueTime === hhmm && t.dueDate <= today);
+        } else if (t.repeat === 'weekly') {
+          try {
+             const dueD = new Date(t.dueDate);
+             shouldTrigger = (t.dueTime === hhmm && t.dueDate <= today && dueD.getDay() === now.getDay());
+          } catch {}
+        } else if (t.repeat === 'monthly') {
+          try {
+             const dueD = new Date(t.dueDate);
+             shouldTrigger = (t.dueTime === hhmm && t.dueDate <= today && dueD.getDate() === now.getDate());
+          } catch {}
+        } else {
+          shouldTrigger = (t.dueDate === today && t.dueTime === hhmm);
+        }
+
+        if (shouldTrigger) {
           firePopup(`task_${t.id}`, '📋 Task Reminder', t.title);
+        }
       });
+      
+      // Meals
       ['morning','afternoon','night'].forEach(slot => {
         const m = meals[slot];
         if (!m?.enabled || m.completed) return;
         if (m.time === hhmm)
           firePopup(`meal_${slot}`, '🍽️ Meal Reminder', `Time for your ${slot} meal!`);
       });
+      
+      // Medicines
       medicines.forEach(med => {
         if (!med.enabled || med.taken) return;
         if (med.time === hhmm)
           firePopup(`med_${med.id}`, '💊 Medicine Reminder', `Time to take ${med.name}`);
       });
+      
+      // Water
       if (water.reminderEnabled && water.consumed < water.goal) {
         const mins     = now.getHours() * 60 + now.getMinutes();
         const interval = water.reminderInterval || 60;
@@ -336,14 +390,34 @@ export default function TodoTab() {
 
   /* ── Notification permission ── */
   const requestNotif = async () => {
-    if (!('Notification' in window)) return;
-    setNotifPerm(await Notification.requestPermission());
+    if (!('Notification' in window)) {
+      setNotifPerm('unsupported');
+      console.log(`[Reminder] permission status: unsupported`);
+      return;
+    }
+    const perm = await Notification.requestPermission();
+    setNotifPerm(perm);
+    console.log(`[Reminder] permission status: ${perm}`);
   };
+
   const handleSnooze = () => {
     if (!activePopup) return;
-    snoozeUntil.current[activePopup.key] = Date.now() + 10 * 60_000;
-    shownToday.current.delete(`${activePopup.key}__${todayStr()}`);
+    const key = activePopup.key;
+    const snoozeData = JSON.parse(localStorage.getItem('spidey_reminder_snooze') || '{}');
+    snoozeData[key] = Date.now() + 10 * 60_000;
+    localStorage.setItem('spidey_reminder_snooze', JSON.stringify(snoozeData));
+    
+    const shownData = JSON.parse(localStorage.getItem('spidey_reminder_shown') || '{}');
+    delete shownData[`${key}__${todayStr()}`];
+    localStorage.setItem('spidey_reminder_shown', JSON.stringify(shownData));
+    
+    console.log(`[Reminder] snoozed: ${key}`);
     setActivePopup(null);
+  };
+  
+  const handleDismiss = () => {
+     console.log(`[Reminder] closed: ${activePopup?.key}`);
+     setActivePopup(null);
   };
 
   /* ── Task CRUD ── */
@@ -472,11 +546,15 @@ export default function TodoTab() {
   const NotifPopup = activePopup && (
     <div className="td-notif-overlay">
       <div className="td-notif-card">
-        <p className="td-notif-title">{activePopup.title}</p>
+        <div className="td-notif-hdr">
+          <span className="td-notif-icon">🔔</span>
+          <p className="td-notif-title">{activePopup.title}</p>
+        </div>
         <p className="td-notif-body">{activePopup.body}</p>
+        <p className="td-notif-time">{new Date().toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}</p>
         <div className="td-notif-actions">
           <button className="td-notif-snooze" onClick={handleSnooze}>😴 Snooze 10 min</button>
-          <button className="td-notif-dismiss" onClick={() => setActivePopup(null)}>✓ Dismiss</button>
+          <button className="td-notif-dismiss" onClick={handleDismiss}>✕ Close</button>
         </div>
       </div>
     </div>
@@ -498,9 +576,6 @@ export default function TodoTab() {
         {!activeCategory && <p className="td-subtitle">Tap a category to see your tasks</p>}
       </div>
       <div className="td-header-actions">
-        {notifPerm !== 'granted' && notifPerm !== 'unsupported' && (
-          <button className="td-notif-enable-btn" onClick={requestNotif} title="Enable notifications">🔔</button>
-        )}
         <button
           className="td-add-note-btn"
           id="todo-add-note-btn"
@@ -527,6 +602,33 @@ export default function TodoTab() {
       {NotifPopup}
 
       {CommonHeader}
+
+      {/* Notification Status Card */}
+      <section className="td-section">
+        <div className="td-notif-status-card">
+          <div className="td-notif-status-info">
+            <span className="td-notif-status-icon">🔔</span>
+            <div className="td-notif-status-text">
+              <p className="td-notif-status-title">Notifications</p>
+              <p className="td-notif-status-desc">
+                {notifPerm === 'granted' ? 'Enabled' : 
+                 notifPerm === 'denied' ? 'Blocked' : 
+                 notifPerm === 'unsupported' ? 'Not Supported' : 'Disabled'}
+              </p>
+            </div>
+          </div>
+          {notifPerm !== 'granted' && notifPerm !== 'unsupported' && (
+            <button className="td-notif-status-btn" onClick={requestNotif}>Enable</button>
+          )}
+        </div>
+        
+        {/* iPhone instructions hint if unsupported or not installed properly */}
+        {notifPerm === 'unsupported' && (
+           <p className="td-notif-iphone-hint">
+             📱 On iPhone, install Spidey from Safari → Share → Add to Home Screen, then enable notifications.
+           </p>
+        )}
+      </section>
 
       {/* Today's Progress */}
       <section className="td-section">

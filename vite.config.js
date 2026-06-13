@@ -61,6 +61,7 @@ export default defineConfig({
 
       // ── Workbox (service worker) configuration ───────
       workbox: {
+        importScripts: ['/sw-notifications.js'],
         // ── App Shell pre-caching ─────────────────────
         // Cache all pre-built static assets emitted by Vite.
         globPatterns: [
