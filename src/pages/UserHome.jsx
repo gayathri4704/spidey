@@ -20,6 +20,7 @@ import { formatDate } from '../utils/helpers';
 import EmojiPicker from 'emoji-picker-react';
 import '../styles/dashboard.css';
 import TodoTab from '../components/TodoTab';
+import DebugHealthCheck from '../components/DebugHealthCheck';
 import { encryptMessage, decryptMessage, getPrivateKey, savePrivateKey, generateKeyPair, exportPublicKey, generateSafetyNumber } from '../utils/crypto';
 
 const BUCKET = 'spidey';
@@ -2890,8 +2891,11 @@ export default function UserHome() {
   const allSongs = [...adminSongs, ...mySongs].sort((a,b) => new Date(b.created_at) - new Date(a.created_at));
   const favoriteSongs = allSongs.filter(s => favoriteIds.includes(s.id));
 
+  const isDebug = new URLSearchParams(window.location.search).get('debug') === 'true';
+
   return (
     <div className="dashboard-layout user-layout-with-nav">
+      {isDebug && <DebugHealthCheck selectedFriend={selectedFriend} />}
       
       {/* ── Top Header with Search Toggle ── */}
       <header className="dashboard-topbar" role="banner">
