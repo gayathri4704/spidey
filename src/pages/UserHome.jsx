@@ -1448,20 +1448,24 @@ function ChatTab({ startCall, privateKey, myPublicKey }) {
   const [selectedFile, setSelectedFile] = useState(null);
   const fileInputRef = useRef(null);
 
-  function addMessageWithoutDuplicate(newMsg) {
+  // ── upsertChatMessage: insert or update-in-place ─────────────
+  function upsertChatMessage(newMsg) {
     setMessages(prev => {
       const exists = prev.some(m => m.id === newMsg.id);
-      if (exists) return prev;
-
+      if (exists) {
+        return prev.map(m => m.id === newMsg.id ? { ...m, ...newMsg } : m);
+      }
       return [...prev, newMsg].sort(
         (a, b) => new Date(a.created_at) - new Date(b.created_at)
       );
     });
-
     setTimeout(() => {
       messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
     }, 50);
   }
+
+  // Legacy alias kept so existing call-sites still compile
+  const addMessageWithoutDuplicate = upsertChatMessage;
 
   const handleListenTogetherInvite = async () => {
     if (!selectedFriend) return;
@@ -1604,13 +1608,40 @@ function ChatTab({ startCall, privateKey, myPublicKey }) {
     const fetchMessagesAndKey = async () => {
       setIsLoadingMessages(true);
       try {
-        let pubKey = null;
+        // Resolve friend's public key
+        let friendPubKey = null;
         const { data: keyData } = await supabase.from('user_keys').select('public_key').eq('user_id', selectedFriend.id).maybeSingle();
-        if (keyData && keyData.public_key) {
-          pubKey = keyData.public_key;
-          setSelectedFriendPublicKey(pubKey);
-          pubKeyRef.current = pubKey;
+        if (keyData?.public_key) {
+          friendPubKey = keyData.public_key;
+          setSelectedFriendPublicKey(friendPubKey);
+          pubKeyRef.current = friendPubKey;
         }
+
+        // Get my private key fresh from IndexedDB
+        const myPrivKey = await getPrivateKey();
+
+        // Direction-aware decrypt helper
+        const decryptForChat = async (msg) => {
+          try {
+            if (!myPrivKey) throw new Error('Missing local private key');
+            // Other party key = always the friend's key (ECDH is symmetric: myPriv + friendPub = same secret)
+            if (!friendPubKey) throw new Error('Missing friend public key');
+            const direction = msg.sender_id === user.id ? 'sent' : 'received';
+            console.log('[E2EE] decrypt direction', {
+              messageId: msg.id,
+              direction,
+              senderId: msg.sender_id,
+              receiverId: msg.receiver_id,
+              privateKeyExists: true,
+              otherPublicKeyExists: true
+            });
+            const text = await decryptMessage(msg.message, myPrivKey, friendPubKey);
+            return text || '🔒 Encrypted message cannot be decrypted';
+          } catch (err) {
+            console.warn('[E2EE] decrypt failed', { messageId: msg?.id, reason: err?.message });
+            return '🔒 Encrypted message cannot be decrypted';
+          }
+        };
 
         // Fetch hidden messages
         const { data: hiddenData } = await supabase.from('chat_message_hidden').select('message_id').eq('user_id', user.id);
@@ -1636,7 +1667,7 @@ function ChatTab({ startCall, privateKey, myPublicKey }) {
         if (error) throw error;
         
         const decryptedData = await Promise.all((data || []).map(async (msg) => {
-          const text = await decryptMessage(msg.message, privateKey, pubKey);
+          const text = await decryptForChat(msg);
           return { ...msg, message: text, is_message: true };
         }));
 
@@ -1661,13 +1692,14 @@ function ChatTab({ startCall, privateKey, myPublicKey }) {
 
     // Subscribe to messages
     const channelName = `chat_messages_${[user.id, selectedFriend.id].sort().join('_')}`;
+    console.log('[Chat realtime] subscribing', channelName);
     const channel = supabase.channel(channelName)
       .on('postgres_changes', {
         event: '*',
         schema: 'public',
         table: 'chat_messages'
       }, async payload => {
-        console.log('[Chat realtime payload]', payload);
+        console.log('[Chat realtime payload]', payload.eventType, payload);
 
         if (payload.eventType === 'DELETE') {
           const deletedId = payload.old?.id;
@@ -1684,18 +1716,34 @@ function ChatTab({ startCall, privateKey, myPublicKey }) {
           (msg.sender_id === user.id && msg.receiver_id === selectedFriend.id) ||
           (msg.sender_id === selectedFriend.id && msg.receiver_id === user.id);
 
+        console.log('[Chat realtime] message belongs to active conversation', isCurrentConversation);
         if (!isCurrentConversation) return;
 
+        // Always fetch fresh private key from IndexedDB for realtime events
         let finalMessageText = msg.message;
-
         try {
-          finalMessageText = await decryptMessage(msg.message, privateKey, pubKeyRef.current);
+          const myPrivKey = await getPrivateKey();
+          if (!myPrivKey) throw new Error('Missing local private key');
+          const friendPubKey = pubKeyRef.current;
+          if (!friendPubKey) throw new Error('Missing friend public key');
+
+          const direction = msg.sender_id === user.id ? 'sent' : 'received';
+          console.log('[E2EE] decrypt direction', {
+            messageId: msg.id,
+            direction,
+            senderId: msg.sender_id,
+            receiverId: msg.receiver_id,
+            privateKeyExists: true,
+            otherPublicKeyExists: true
+          });
+          finalMessageText = await decryptMessage(msg.message, myPrivKey, friendPubKey);
+          if (!finalMessageText) finalMessageText = '🔒 Encrypted message cannot be decrypted';
         } catch (err) {
-          console.warn('[Chat decrypt failed]', err);
+          console.warn('[E2EE] decrypt failed', { messageId: msg?.id, reason: err?.message });
           finalMessageText = '🔒 Encrypted message cannot be decrypted';
         }
 
-        addMessageWithoutDuplicate({
+        upsertChatMessage({
           ...msg,
           message: finalMessageText,
           is_message: true

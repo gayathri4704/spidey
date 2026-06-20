@@ -51,6 +51,25 @@ const btnStyle = {
 export default function DebugHealthCheck({ selectedFriend = null }) {
   const { user } = useAuth();
   const [results, setResults] = useState({});
+  const [debugFriends, setDebugFriends] = useState([]);
+  const [debugSelectedFriendId, setDebugSelectedFriendId] = useState('');
+
+  // Load friends list for the debug friend picker
+  useEffect(() => {
+    if (!user?.id) return;
+    const load = async () => {
+      const { data: friendRows } = await supabase.from('friends').select('friend_id').eq('user_id', user.id);
+      if (friendRows?.length) {
+        const ids = friendRows.map(f => f.friend_id);
+        const { data: profiles } = await supabase.from('profiles').select('id, username, display_name').in('id', ids);
+        setDebugFriends(profiles || []);
+      }
+    };
+    load();
+  }, [user?.id]);
+
+  // Active friend = prop (from ChatTab) or manually selected in debug panel
+  const activeFriend = selectedFriend || debugFriends.find(f => f.id === debugSelectedFriendId) || null;
 
   const logResult = (module, key, result, error = null) => {
     console.log(`[HealthCheck][${module}] ${key}:`, result, error ? error : '');
@@ -234,15 +253,15 @@ export default function DebugHealthCheck({ selectedFriend = null }) {
   };
 
   const checkFriendKey = async () => {
-    if (!selectedFriend?.id) {
+    if (!activeFriend?.id) {
       logResult('E2EE', 'Friend Key', 'WARNING', 'No friend selected');
       return;
     }
-    const { data, error } = await supabase.from('user_keys').select('public_key').eq('user_id', selectedFriend.id).maybeSingle();
+    const { data, error } = await supabase.from('user_keys').select('public_key').eq('user_id', activeFriend.id).maybeSingle();
     if (error || !data) {
-      logResult('E2EE', 'Friend Key', 'FAIL', `Friend ${selectedFriend.username || selectedFriend.id} missing public key`);
+      logResult('E2EE', 'Friend Key', 'FAIL', `Friend ${activeFriend.username || activeFriend.id} missing public key`);
     } else {
-      logResult('E2EE', 'Friend Key', 'PASS', `Friend ${selectedFriend.username || selectedFriend.id} public key exists`);
+      logResult('E2EE', 'Friend Key', 'PASS', `Friend ${activeFriend.username || activeFriend.id} public key exists`);
     }
   };
 
@@ -278,11 +297,12 @@ export default function DebugHealthCheck({ selectedFriend = null }) {
     }
   };
 
+  // Fix realtime subscription — use postgres_changes not 'postgres'
   const [realtimeStatus, setRealtimeStatus] = useState('UNINITIALIZED');
   const [lastRealtimeEvent, setLastRealtimeEvent] = useState(null);
   useEffect(() => {
     const ch = supabase.channel('debug_chat_messages')
-      .on('postgres', { event: '*', schema: 'public', table: 'chat_messages' }, payload => {
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'chat_messages' }, payload => {
         console.log('[HealthCheck][Realtime] Chat event:', payload);
         setLastRealtimeEvent(payload.eventType);
       })
@@ -294,13 +314,13 @@ export default function DebugHealthCheck({ selectedFriend = null }) {
   }, []);
 
   const checkChatDecrypt = async () => {
-    if (!user?.id || !selectedFriend?.id) {
-      logResult('Chat', 'Decrypt', 'WARNING', 'No friend selected');
+    if (!user?.id || !activeFriend?.id) {
+      logResult('Chat', 'Decrypt', 'WARNING', 'No friend selected — use the Debug Friend picker below');
       return;
     }
     const { data: messages } = await supabase.from('chat_messages')
       .select('*')
-      .or(`and(sender_id.eq.${user.id},receiver_id.eq.${selectedFriend.id}),and(sender_id.eq.${selectedFriend.id},receiver_id.eq.${user.id})`)
+      .or(`and(sender_id.eq.${user.id},receiver_id.eq.${activeFriend.id}),and(sender_id.eq.${activeFriend.id},receiver_id.eq.${user.id})`)
       .order('created_at', { ascending: false })
       .limit(5);
       
@@ -316,7 +336,7 @@ export default function DebugHealthCheck({ selectedFriend = null }) {
       return;
     }
 
-    const { data: friendKeyData } = await supabase.from('user_keys').select('public_key').eq('user_id', selectedFriend.id).maybeSingle();
+    const { data: friendKeyData } = await supabase.from('user_keys').select('public_key').eq('user_id', activeFriend.id).maybeSingle();
     if (!friendKeyData) {
       logResult('Chat', 'Decrypt', 'FAIL', 'Missing friend public key');
       return;
@@ -388,13 +408,13 @@ export default function DebugHealthCheck({ selectedFriend = null }) {
   }, [user?.id]);
 
   const testSignaling = () => {
-    if (!selectedFriend?.id) return;
-    const ch = supabase.channel(`calls:${selectedFriend.id}`);
+    if (!activeFriend?.id) return;
+    const ch = supabase.channel(`calls:${activeFriend.id}`);
     ch.subscribe((status) => {
       if (status === 'SUBSCRIBED') {
         ch.send({ type: 'broadcast', event: 'debug-signal', payload: { test: true } })
           .then(() => {
-            logResult('WebRTC', 'Signaling Test', 'PASS', `Sent broadcast to ${selectedFriend.id}`);
+            logResult('WebRTC', 'Signaling Test', 'PASS', `Sent broadcast to ${activeFriend.id}`);
             setTimeout(() => supabase.removeChannel(ch), 1000);
           })
           .catch(err => {
@@ -450,8 +470,28 @@ export default function DebugHealthCheck({ selectedFriend = null }) {
       <button onClick={runAllChecks} style={{...btnStyle, backgroundColor: '#a6e3a1', color: '#11111b'}}>Run All Standard Checks</button>
       <button onClick={clearCacheAndReload} style={{...btnStyle, backgroundColor: '#f38ba8'}}>Clear App Cache & Reload</button>
       {user?.id && <button onClick={regenerateKeys} style={{...btnStyle, backgroundColor: '#fab387'}}>Regenerate My Chat Keys</button>}
-      {selectedFriend?.id && <button onClick={testChatInsert} style={btnStyle}>Test Chat Insert ({selectedFriend.username || 'Friend'})</button>}
-      {selectedFriend?.id && <button onClick={testSignaling} style={btnStyle}>Test WebRTC Signaling ({selectedFriend.username || 'Friend'})</button>}
+      {activeFriend?.id && <button onClick={() => testChatInsert()} style={btnStyle}>Test Chat Insert ({activeFriend.username || 'Friend'})</button>}
+      {activeFriend?.id && <button onClick={testSignaling} style={btnStyle}>Test WebRTC Signaling ({activeFriend.username || 'Friend'})</button>}
+
+      {/* Debug friend picker */}
+      <div style={{ marginTop: '12px', padding: '8px', backgroundColor: '#313244', borderRadius: '4px' }}>
+        <label style={{ display: 'block', marginBottom: '4px', color: '#cba6f7', fontWeight: 'bold' }}>Debug Friend:</label>
+        {selectedFriend ? (
+          <div style={{ color: '#a6e3a1' }}>✅ {selectedFriend.display_name || selectedFriend.username} (from chat)</div>
+        ) : (
+          <select
+            value={debugSelectedFriendId}
+            onChange={e => setDebugSelectedFriendId(e.target.value)}
+            style={{ width: '100%', padding: '4px', backgroundColor: '#1e1e2e', color: '#cdd6f4', border: '1px solid #45475a', borderRadius: '4px' }}
+          >
+            <option value=''>-- Select friend --</option>
+            {debugFriends.map(f => (
+              <option key={f.id} value={f.id}>{f.display_name || f.username} (@{f.username})</option>
+            ))}
+          </select>
+        )}
+        {activeFriend && <div style={{ color: '#f9e2af', marginTop: '4px', fontSize: '11px' }}>Active: {activeFriend.username} ({activeFriend.id})</div>}
+      </div>
 
       <div style={{ marginTop: '16px', padding: '8px', backgroundColor: '#313244', borderRadius: '4px' }}>
         <p style={{ margin: '4px 0' }}><strong>Chat Realtime:</strong> {realtimeStatus}</p>
