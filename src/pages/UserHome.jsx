@@ -418,8 +418,38 @@ function ConnectTab() {
 
   const handleSendRequest = async (targetId) => {
     try {
+      if (!user?.id) {
+        setMessage({ text: 'Please login again', type: 'error' });
+        setTimeout(() => setMessage({ text: '', type: '' }), 3000);
+        return;
+      }
+
       if (targetId === user.id) {
         setMessage({ text: 'Cannot send request to yourself.', type: 'error' });
+        setTimeout(() => setMessage({ text: '', type: '' }), 3000);
+        return;
+      }
+
+      const { data: senderProfile } = await supabase
+        .from('profiles')
+        .select('id')
+        .eq('id', user.id)
+        .maybeSingle();
+
+      if (!senderProfile) {
+        setMessage({ text: 'Your profile is missing. Please logout and login again.', type: 'error' });
+        setTimeout(() => setMessage({ text: '', type: '' }), 3000);
+        return;
+      }
+
+      const { data: receiverProfile } = await supabase
+        .from('profiles')
+        .select('id')
+        .eq('id', targetId)
+        .maybeSingle();
+
+      if (!receiverProfile) {
+        setMessage({ text: 'Selected user profile not found.', type: 'error' });
         setTimeout(() => setMessage({ text: '', type: '' }), 3000);
         return;
       }
@@ -1376,6 +1406,21 @@ function ChatTab({ startCall, privateKey, myPublicKey }) {
   const [selectedFile, setSelectedFile] = useState(null);
   const fileInputRef = useRef(null);
 
+  function addMessageWithoutDuplicate(newMsg) {
+    setMessages(prev => {
+      const exists = prev.some(m => m.id === newMsg.id);
+      if (exists) return prev;
+
+      return [...prev, newMsg].sort(
+        (a, b) => new Date(a.created_at) - new Date(b.created_at)
+      );
+    });
+
+    setTimeout(() => {
+      messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+    }, 50);
+  }
+
   const handleListenTogetherInvite = async () => {
     if (!selectedFriend) return;
     const roomId = `room_${Date.now()}`;
@@ -1573,28 +1618,46 @@ function ChatTab({ startCall, privateKey, myPublicKey }) {
     fetchMessagesAndKey();
 
     // Subscribe to messages
-    const channel = supabase.channel(`chat_${user.id}_${selectedFriend.id}`)
+    const channelName = `chat_messages_${[user.id, selectedFriend.id].sort().join('_')}`;
+    const channel = supabase.channel(channelName)
       .on('postgres_changes', {
         event: '*',
         schema: 'public',
         table: 'chat_messages'
       }, async payload => {
-        if (payload.eventType === 'INSERT' || payload.eventType === 'UPDATE') {
-          const msg = payload.new;
-          if ((msg.sender_id === user.id && msg.receiver_id === selectedFriend.id) ||
-              (msg.sender_id === selectedFriend.id && msg.receiver_id === user.id)) {
-            const text = await decryptMessage(msg.message, privateKey, pubKeyRef.current);
-            const decryptedMsg = { ...msg, message: text };
-            if (payload.eventType === 'INSERT') {
-              setMessages(prev => [...prev, decryptedMsg]);
-              messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
-            } else {
-              setMessages(prev => prev.map(m => m.id === msg.id ? decryptedMsg : m));
-            }
+        console.log('[Chat realtime payload]', payload);
+
+        if (payload.eventType === 'DELETE') {
+          const deletedId = payload.old?.id;
+          if (deletedId) {
+            setMessages(prev => prev.filter(m => m.id !== deletedId));
           }
-        } else if (payload.eventType === 'DELETE') {
-          setMessages(prev => prev.filter(m => m.id !== payload.old.id));
+          return;
         }
+
+        const msg = payload.new;
+        if (!msg) return;
+
+        const isCurrentConversation =
+          (msg.sender_id === user.id && msg.receiver_id === selectedFriend.id) ||
+          (msg.sender_id === selectedFriend.id && msg.receiver_id === user.id);
+
+        if (!isCurrentConversation) return;
+
+        let finalMessageText = msg.message;
+
+        try {
+          finalMessageText = await decryptMessage(msg.message, privateKey, pubKeyRef.current);
+        } catch (err) {
+          console.warn('[Chat decrypt failed]', err);
+          finalMessageText = '🔒 Encrypted message cannot be decrypted';
+        }
+
+        addMessageWithoutDuplicate({
+          ...msg,
+          message: finalMessageText,
+          is_message: true
+        });
       })
       .on('postgres_changes', {
         event: 'INSERT',
@@ -1621,10 +1684,31 @@ function ChatTab({ startCall, privateKey, myPublicKey }) {
           }
         }
       })
-      .subscribe();
+      .subscribe((status, err) => {
+        console.log('[Chat realtime status]', status, err);
 
-    return () => { supabase.removeChannel(channel); };
-  }, [selectedFriend, user.id, privateKey]);
+        if (status === 'SUBSCRIBED') {
+          console.log('[Chat realtime] subscribed successfully');
+        }
+
+        if (status === 'CHANNEL_ERROR') {
+          console.error('[Chat realtime] channel error', err);
+        }
+
+        if (status === 'TIMED_OUT') {
+          console.error('[Chat realtime] timed out');
+        }
+
+        if (status === 'CLOSED') {
+          console.warn('[Chat realtime] closed');
+        }
+      });
+
+    return () => {
+      console.log('[Chat realtime] removing channel', channelName);
+      supabase.removeChannel(channel);
+    };
+  }, [selectedFriend, user?.id, privateKey]);
 
   const handleSendMessage = async (e) => {
     e.preventDefault();
@@ -1661,12 +1745,21 @@ function ChatTab({ startCall, privateKey, myPublicKey }) {
     }
 
     try {
-      const { error } = await supabase.from('chat_messages').insert({
+      const { data: insertedMsg, error } = await supabase.from('chat_messages').insert({
         sender_id: user.id,
         receiver_id: selectedFriend.id,
         message: encryptedMsgText
-      });
+      }).select('*').single();
+      
       if (error) throw error;
+
+      if (insertedMsg) {
+        addMessageWithoutDuplicate({
+          ...insertedMsg,
+          message: msgText,
+          is_message: true
+        });
+      }
     } catch (err) {
       console.error('Error sending message:', err);
     }

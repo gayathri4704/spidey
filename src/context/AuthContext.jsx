@@ -40,6 +40,52 @@ async function fetchProfile(userId) {
 }
 
 /**
+ * Ensures the profile exists, creating it if necessary.
+ */
+async function ensureProfile(authUser, usernameFallback) {
+  if (!authUser?.id) return null;
+
+  const { data: existing, error: fetchError } = await supabase
+    .from('profiles')
+    .select('*')
+    .eq('id', authUser.id)
+    .maybeSingle();
+
+  if (fetchError) {
+    console.warn('[AuthContext] profile fetch failed:', fetchError.message);
+  }
+
+  if (existing) return existing;
+
+  const fallbackName =
+    usernameFallback ||
+    authUser.user_metadata?.username ||
+    authUser.email?.split('@')[0] ||
+    'user';
+
+  const { data: created, error: createError } = await supabase
+    .from('profiles')
+    .upsert(
+      {
+        id: authUser.id,
+        username: fallbackName,
+        display_name: fallbackName,
+        role: 'user'
+      },
+      { onConflict: 'id' }
+    )
+    .select('*')
+    .single();
+
+  if (createError) {
+    console.error('[AuthContext] profile create failed:', createError.message);
+    return null;
+  }
+
+  return created;
+}
+
+/**
  * Merges a Supabase auth user with its profiles row into a single object.
  */
 function buildUserObject(authUser, profile) {
@@ -73,7 +119,7 @@ export function AuthProvider({ children }) {
 
     supabase.auth.getSession().then(async ({ data: { session } }) => {
       if (session?.user && mounted) {
-        const profile = await fetchProfile(session.user.id);
+        const profile = await ensureProfile(session.user);
         setUser(buildUserObject(session.user, profile));
       }
       if (mounted) setIsInitializing(false);
@@ -84,7 +130,7 @@ export function AuthProvider({ children }) {
       async (event, session) => {
         if (!mounted) return;
         if (session?.user) {
-          const profile = await fetchProfile(session.user.id);
+          const profile = await ensureProfile(session.user);
           setUser(buildUserObject(session.user, profile));
         } else {
           setUser(null);
@@ -154,17 +200,10 @@ export function AuthProvider({ children }) {
       return { success: false, error: 'Sign up failed. Please try again.' };
     }
 
-    // 2. Insert profiles row
-    const { error: profileError } = await supabase.from('profiles').insert({
-      id:           authUser.id,
-      username:     username.trim(),
-      display_name: username.trim(),
-      role:         'user',
-      theme:        'default',
-    });
-
-    if (profileError) {
-      console.error('[AuthContext] Profile insert failed:', profileError.message);
+    // 2. Insert or upsert profiles row
+    const profile = await ensureProfile(authUser, username.trim());
+    if (!profile) {
+      console.warn('[AuthContext] Profile creation returned null');
       // Non-fatal – user can still log in; profile can be created later
     }
 
@@ -193,7 +232,7 @@ export function AuthProvider({ children }) {
    */
   const refreshProfile = useCallback(async () => {
     if (!user?.id) return;
-    const profile = await fetchProfile(user.id);
+    const profile = await ensureProfile(user);
     if (profile) {
       setUser((prev) => ({ ...prev, ...profile }));
     }
