@@ -215,7 +215,8 @@ function ConnectTab() {
         const { data: profiles, error: profErr } = await supabase
           .from('profiles')
           .select('id, username, display_name, role')
-          .in('id', uniqueIds);
+          .in('id', uniqueIds)
+          .eq('access_status', 'approved');
 
         if (profErr) throw profErr;
 
@@ -254,7 +255,8 @@ function ConnectTab() {
         const { data: profiles, error: profErr } = await supabase
           .from('profiles')
           .select('id, username, display_name')
-          .in('id', senderIds);
+          .in('id', senderIds)
+          .eq('access_status', 'approved');
           
         if (profErr) throw profErr;
         
@@ -387,14 +389,21 @@ function ConnectTab() {
     const delay = setTimeout(async () => {
       setIsSearching(true);
       try {
+        console.log('[Connect] search term:', friendSearch);
+        console.log('[Connect] current user id:', user.id);
         const { data: users, error } = await supabase
           .from('profiles')
           .select('id, username, display_name, role')
           .neq('id', user.id)
+          .eq('access_status', 'approved')
           .or(`username.ilike.%${friendSearch}%,display_name.ilike.%${friendSearch}%`)
           .limit(10);
         
-        if (error) throw error;
+        if (error) {
+          console.error('[Connect] search error:', error);
+          throw error;
+        }
+        console.log('[Connect] search result count:', users?.length || 0);
 
         if (users && users.length > 0) {
           const { data: requests, error: reqErr } = await supabase
