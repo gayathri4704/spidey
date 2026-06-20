@@ -21,7 +21,129 @@ import EmojiPicker from 'emoji-picker-react';
 import '../styles/dashboard.css';
 import TodoTab from '../components/TodoTab';
 import DebugHealthCheck from '../components/DebugHealthCheck';
-import { encryptMessage, decryptMessage, getPrivateKey, savePrivateKey, generateKeyPair, exportPublicKey, generateSafetyNumber } from '../utils/crypto';
+import { encryptMessage, decryptMessage,
+         getPrivateKey, savePrivateKey,
+         getPrivateKeyForUser, savePrivateKeyForUser,
+         generateKeyPair, exportPublicKey, generateSafetyNumber,
+         encryptPrivateKeyForBackup, decryptPrivateKeyFromBackup } from '../utils/crypto';
+
+// ── ChatPassphraseModal ──────────────────────────────────────────
+//  mode: 'unlock' | 'create' | 'backup'
+// ───────────────────────────────────────────────────
+
+const PASSPHRASE_MODAL_STYLE = {
+  position: 'fixed', inset: 0, backgroundColor: 'rgba(0,0,0,0.85)',
+  display: 'flex', alignItems: 'center', justifyContent: 'center',
+  zIndex: 99999, padding: '20px', boxSizing: 'border-box'
+};
+
+function ChatPassphraseModal({ mode, backupData, onSuccess, onReset }) {
+  const [passphrase, setPassphrase] = useState('');
+  const [confirm,    setConfirm]    = useState('');
+  const [error,      setError]      = useState('');
+  const [loading,    setLoading]    = useState(false);
+
+  const isUnlock = mode === 'unlock';
+  const isCreate = mode === 'create';
+  const isBackup = mode === 'backup';
+
+  const title = isUnlock ? '🔐 Unlock Chat on This Device'
+              : isBackup ? '💾 Back Up Your Chat Key'
+              :            '🔑 Create Chat Passphrase';
+
+  const subtitle = isUnlock
+    ? 'Enter your Chat Passphrase to restore your encrypted key on this device.'
+    : isBackup
+    ? 'Create a passphrase to securely back up your key so you can restore it on other devices.'
+    : 'Create a passphrase to protect your chat encryption key. You will need this to unlock chats on new devices.';
+
+  const handleSubmit = async (e) => {
+    e.preventDefault();
+    setError('');
+    if (!passphrase.trim()) { setError('Passphrase cannot be empty.'); return; }
+    if (!isUnlock && passphrase !== confirm) { setError('Passphrases do not match.'); return; }
+    if (!isUnlock && passphrase.length < 8)  { setError('Passphrase must be at least 8 characters.'); return; }
+    setLoading(true);
+    try {
+      await onSuccess(passphrase);
+    } catch (err) {
+      setError(err.message || 'Operation failed. Try again.');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  return (
+    <div style={PASSPHRASE_MODAL_STYLE}>
+      <div style={{
+        backgroundColor: '#1e1e2e', borderRadius: '12px', padding: '32px',
+        maxWidth: '400px', width: '100%', boxShadow: '0 8px 32px rgba(0,0,0,0.5)',
+        fontFamily: 'system-ui, sans-serif'
+      }}>
+        <div style={{ fontSize: '28px', textAlign: 'center', marginBottom: '8px' }}>🕷️</div>
+        <h2 style={{ color: '#cdd6f4', margin: '0 0 8px', textAlign: 'center', fontSize: '1.2rem' }}>{title}</h2>
+        <p style={{ color: '#bac2de', fontSize: '0.85rem', textAlign: 'center', marginBottom: '24px', lineHeight: 1.5 }}>{subtitle}</p>
+
+        <form onSubmit={handleSubmit}>
+          <input
+            type="password"
+            placeholder="Chat Passphrase"
+            value={passphrase}
+            onChange={e => setPassphrase(e.target.value)}
+            autoFocus
+            style={{
+              width: '100%', padding: '10px 12px', borderRadius: '6px',
+              backgroundColor: '#313244', color: '#cdd6f4', border: '1px solid #45475a',
+              marginBottom: '12px', fontSize: '1rem', boxSizing: 'border-box'
+            }}
+          />
+          {!isUnlock && (
+            <input
+              type="password"
+              placeholder="Confirm Passphrase"
+              value={confirm}
+              onChange={e => setConfirm(e.target.value)}
+              style={{
+                width: '100%', padding: '10px 12px', borderRadius: '6px',
+                backgroundColor: '#313244', color: '#cdd6f4', border: '1px solid #45475a',
+                marginBottom: '12px', fontSize: '1rem', boxSizing: 'border-box'
+              }}
+            />
+          )}
+          {error && <p style={{ color: '#f38ba8', fontSize: '0.85rem', marginBottom: '12px' }}>{error}</p>}
+          <button
+            type="submit" disabled={loading}
+            style={{
+              width: '100%', padding: '12px', borderRadius: '6px', border: 'none',
+              backgroundColor: '#89b4fa', color: '#11111b', fontWeight: 'bold',
+              fontSize: '1rem', cursor: loading ? 'not-allowed' : 'pointer',
+              marginBottom: '10px'
+            }}
+          >
+            {loading ? 'Please wait…' : isUnlock ? 'Unlock Chat' : 'Save & Continue'}
+          </button>
+        </form>
+
+        {isUnlock && (
+          <button
+            onClick={onReset}
+            style={{
+              width: '100%', padding: '10px', borderRadius: '6px', border: '1px solid #45475a',
+              backgroundColor: 'transparent', color: '#f38ba8', cursor: 'pointer', fontSize: '0.9rem'
+            }}
+          >
+            ⚠️ Forgot passphrase — Reset my chat keys
+          </button>
+        )}
+        {isCreate && (
+          <p style={{ color: '#6c7086', fontSize: '0.75rem', textAlign: 'center', marginTop: '8px' }}>
+            If you skip this step now, you will be asked again when you open chat on another device.
+          </p>
+        )}
+      </div>
+    </div>
+  );
+}
 
 const BUCKET = 'spidey';
 
@@ -1473,12 +1595,12 @@ function ChatTab({ startCall, privateKey, myPublicKey }) {
     joinRoomChannel(roomId, true);
     
     let msgText = `I started a Listen Together room! Tap to join: ${roomId}`;
-    if (!privateKey || !selectedFriendPublicKey) {
-      alert("Encrypted chat is not ready. Please refresh or open this chat again.");
+    const myPrivKey = await getPrivateKeyForUser(user.id);
+    if (!myPrivKey || !selectedFriendPublicKey) {
+      alert('Encrypted chat is not ready. Please refresh or open this chat again.');
       return;
     }
-    
-    const encryptedMsgText = await encryptMessage(msgText, privateKey, selectedFriendPublicKey);
+    const encryptedMsgText = await encryptMessage(msgText, myPrivKey, selectedFriendPublicKey);
     if (!encryptedMsgText || !encryptedMsgText.includes('{"v":1')) {
       alert("Encrypted chat is not ready. Please refresh or open this chat again.");
       return;
@@ -1809,15 +1931,16 @@ function ChatTab({ startCall, privateKey, myPublicKey }) {
       return;
     }
 
-    if (!privateKey || !selectedFriendPublicKey) {
-      alert("Encrypted chat is not ready. Please refresh or open this chat again.");
+    const myPrivKey = await getPrivateKeyForUser(user.id);
+    if (!myPrivKey || !selectedFriendPublicKey) {
+      alert('Encrypted chat is not ready. Please refresh or open this chat again.');
       return;
     }
 
     let msgText = newMessage.trim();
     setNewMessage('');
     
-    const encryptedMsgText = await encryptMessage(msgText, privateKey, selectedFriendPublicKey);
+    const encryptedMsgText = await encryptMessage(msgText, myPrivKey, selectedFriendPublicKey);
     if (!encryptedMsgText || !encryptedMsgText.includes('{"v":1')) {
       alert("Encrypted chat is not ready. Please refresh or open this chat again.");
       return;
@@ -2407,36 +2530,128 @@ export default function UserHome() {
   
   const [privateKey, setPrivateKey] = useState(null);
   const [myPublicKey, setMyPublicKey] = useState(null);
+  // 'loading' | 'needs-unlock' | 'needs-create' | 'needs-backup' | 'ready'
+  const [cryptoSetupState, setCryptoSetupState] = useState('loading');
+  const [cryptoBackupData, setCryptoBackupData] = useState(null);
 
   useEffect(() => {
     if (!user?.id) return;
     const initCrypto = async () => {
       try {
-        let pubKey = null;
-        let key = await getPrivateKey();
+        // 1. Try user-scoped key first
+        let key = await getPrivateKeyForUser(user.id);
+
+        // 2. Migrate old global key (single-device legacy)
         if (!key) {
-          const keyPair = await generateKeyPair();
-          await savePrivateKey(keyPair.privateKey);
-          key = keyPair.privateKey;
-          
-          const exportedPubKey = await exportPublicKey(keyPair.publicKey);
-          await supabase.from('user_keys').upsert({
-            user_id: user.id,
-            public_key: exportedPubKey
-          });
-          pubKey = exportedPubKey;
-        } else {
-          const { data } = await supabase.from('user_keys').select('public_key').eq('user_id', user.id).maybeSingle();
-          if (data) pubKey = data.public_key;
+          const legacy = await getPrivateKey();
+          if (legacy) {
+            console.log('[Crypto] Migrating legacy global key to user-scoped storage');
+            await savePrivateKeyForUser(user.id, legacy);
+            key = legacy;
+          }
         }
-        setPrivateKey(key);
-        setMyPublicKey(pubKey);
+
+        // 3. Fetch user_keys row regardless (need public key + backup status)
+        const { data: keyRow } = await supabase
+          .from('user_keys')
+          .select('public_key, encrypted_private_key, private_key_salt, private_key_iv, kdf_iterations')
+          .eq('user_id', user.id)
+          .maybeSingle();
+
+        if (key) {
+          // Key exists locally — check if we need to create a backup
+          setPrivateKey(key);
+          setMyPublicKey(keyRow?.public_key || null);
+
+          if (!keyRow?.encrypted_private_key) {
+            // Has local key but no backup — prompt to create backup passphrase
+            setCryptoSetupState('needs-backup');
+            setCryptoBackupData({ existingKey: key, keyRow });
+          } else {
+            setCryptoSetupState('ready');
+          }
+          return;
+        }
+
+        // 4. No local key — check if encrypted backup exists
+        if (keyRow?.encrypted_private_key) {
+          // Backup exists on Supabase — ask for passphrase to unlock
+          setCryptoSetupState('needs-unlock');
+          setCryptoBackupData(keyRow);
+          return;
+        }
+
+        // 5. No local key, no backup — generate new key pair and prompt for passphrase
+        const keyPair = await generateKeyPair();
+        const exportedPubKey = await exportPublicKey(keyPair.publicKey);
+        await savePrivateKeyForUser(user.id, keyPair.privateKey);
+        await supabase.from('user_keys').upsert({
+          user_id:    user.id,
+          public_key: exportedPubKey,
+          updated_at: new Date().toISOString()
+        }, { onConflict: 'user_id' });
+        setPrivateKey(keyPair.privateKey);
+        setMyPublicKey(exportedPubKey);
+        setCryptoSetupState('needs-create');
+        setCryptoBackupData({ existingKey: keyPair.privateKey });
       } catch (err) {
         console.error('[Crypto] Error initializing keys:', err);
       }
     };
     initCrypto();
   }, [user?.id]);
+
+  // ── Passphrase modal handlers ────────────────────────────────
+  const handlePassphraseSuccess = async (passphrase) => {
+    if (cryptoSetupState === 'needs-unlock') {
+      // Decrypt backup and restore private key
+      const bd = cryptoBackupData;
+      let restoredKey;
+      try {
+        restoredKey = await decryptPrivateKeyFromBackup(
+          bd.encrypted_private_key, passphrase,
+          bd.private_key_salt, bd.private_key_iv,
+          bd.kdf_iterations || 250000
+        );
+      } catch {
+        throw new Error('Wrong chat passphrase or key backup is invalid.');
+      }
+      await savePrivateKeyForUser(user.id, restoredKey);
+      setPrivateKey(restoredKey);
+      setCryptoSetupState('ready');
+    } else {
+      // 'needs-create' or 'needs-backup': encrypt key and upload
+      const keyToBackup = cryptoBackupData?.existingKey || privateKey;
+      const backupPayload = await encryptPrivateKeyForBackup(keyToBackup, passphrase);
+      await supabase.from('user_keys').update({
+        ...backupPayload,
+        updated_at: new Date().toISOString()
+      }).eq('user_id', user.id);
+      setCryptoSetupState('ready');
+    }
+  };
+
+  const handlePassphraseReset = async () => {
+    if (!window.confirm(
+      'WARNING: This will delete your current chat keys.\n\nAll existing encrypted messages will be permanently unreadable.\n\nContinue?'
+    )) return;
+    // Delete old backup and generate fresh keys
+    const keyPair = await generateKeyPair();
+    const exportedPubKey = await exportPublicKey(keyPair.publicKey);
+    await savePrivateKeyForUser(user.id, keyPair.privateKey);
+    await supabase.from('user_keys').update({
+      public_key:            exportedPubKey,
+      encrypted_private_key: null,
+      private_key_iv:        null,
+      private_key_salt:      null,
+      kdf_iterations:        null,
+      updated_at:            new Date().toISOString()
+    }).eq('user_id', user.id);
+    setPrivateKey(keyPair.privateKey);
+    setMyPublicKey(exportedPubKey);
+    setCryptoSetupState('needs-create');
+    setCryptoBackupData({ existingKey: keyPair.privateKey });
+  };
 
   const [activeTab,   setActiveTab]   = useState('home');
   const [adminSongs,  setAdminSongs]  = useState([]);
@@ -2965,7 +3180,20 @@ export default function UserHome() {
   return (
     <div className="dashboard-layout user-layout-with-nav">
       {isDebug && <DebugHealthCheck selectedFriend={null} />}
-      
+
+      {/* Chat passphrase modal — shown when private key needs setup or unlock */}
+      {(cryptoSetupState === 'needs-unlock' ||
+        cryptoSetupState === 'needs-create' ||
+        cryptoSetupState === 'needs-backup') && (
+        <ChatPassphraseModal
+          mode={cryptoSetupState === 'needs-unlock' ? 'unlock'
+              : cryptoSetupState === 'needs-backup' ? 'backup' : 'create'}
+          backupData={cryptoBackupData}
+          onSuccess={handlePassphraseSuccess}
+          onReset={handlePassphraseReset}
+        />
+      )}
+
       {/* ── Top Header with Search Toggle ── */}
       <header className="dashboard-topbar" role="banner">
         <div className="topbar-logo" style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>

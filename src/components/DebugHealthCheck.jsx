@@ -3,9 +3,13 @@ import { supabase } from '../lib/supabaseClient';
 import { useAuth } from '../context/AuthContext';
 import {
   getPrivateKey,
+  getPrivateKeyForUser,
   savePrivateKey,
+  savePrivateKeyForUser,
   generateKeyPair,
   exportPublicKey,
+  encryptPrivateKeyForBackup,
+  decryptPrivateKeyFromBackup,
   decryptMessage
 } from '../utils/crypto';
 
@@ -214,19 +218,32 @@ export default function DebugHealthCheck({ selectedFriend = null }) {
 
   const checkE2EEKeys = async () => {
     if (!user?.id) return;
-    const { data, error } = await supabase.from('user_keys').select('public_key').eq('user_id', user.id).maybeSingle();
+    const { data, error } = await supabase.from('user_keys')
+      .select('public_key, encrypted_private_key')
+      .eq('user_id', user.id)
+      .maybeSingle();
+
+    // Check user-scoped local key first, fall back to legacy global key
     let hasPriv = false;
     try {
-      const priv = await getPrivateKey();
-      hasPriv = !!priv;
+      const userKey = await getPrivateKeyForUser(user.id);
+      if (userKey) { hasPriv = true; }
+      else {
+        const legacyKey = await getPrivateKey();
+        hasPriv = !!legacyKey;
+      }
     } catch(err) {}
-    
+
+    const hasBackup = !!(data?.encrypted_private_key);
+
     if (error) {
       logResult('E2EE', 'Public Key', 'FAIL', getRLSError(error, 'user_keys', 'select'));
     } else {
-      logResult('E2EE', 'Public Key', data ? 'PASS' : 'FAIL', data ? 'Exists' : 'Missing row');
+      logResult('E2EE', 'Public Key', data?.public_key ? 'PASS' : 'FAIL', data?.public_key ? 'Exists' : 'Missing row');
     }
-    logResult('E2EE', 'Private Key', hasPriv ? 'PASS' : 'FAIL', hasPriv ? 'Exists locally' : 'Missing locally');
+    logResult('E2EE', 'Private Key (local)', hasPriv ? 'PASS' : 'FAIL', hasPriv ? 'Exists locally' : 'Missing locally');
+    logResult('E2EE', 'Encrypted Backup', hasBackup ? 'PASS' : 'WARNING', hasBackup ? 'Backup exists in Supabase' : 'No backup — multi-device decrypt will fail');
+    logResult('E2EE', 'Mode', 'INFO', hasBackup ? 'encrypted backup enabled' : 'local-only');
   };
 
   const regenerateKeys = async () => {
@@ -470,6 +487,45 @@ export default function DebugHealthCheck({ selectedFriend = null }) {
       <button onClick={runAllChecks} style={{...btnStyle, backgroundColor: '#a6e3a1', color: '#11111b'}}>Run All Standard Checks</button>
       <button onClick={clearCacheAndReload} style={{...btnStyle, backgroundColor: '#f38ba8'}}>Clear App Cache & Reload</button>
       {user?.id && <button onClick={regenerateKeys} style={{...btnStyle, backgroundColor: '#fab387'}}>Regenerate My Chat Keys</button>}
+
+      {/* E2EE debug buttons */}
+      <button onClick={async () => {
+        const passphrase = window.prompt('Enter your Chat Passphrase to unlock on this device:');
+        if (!passphrase) return;
+        try {
+          const { data: keyRow } = await supabase.from('user_keys')
+            .select('encrypted_private_key, private_key_salt, private_key_iv, kdf_iterations')
+            .eq('user_id', user.id).maybeSingle();
+          if (!keyRow?.encrypted_private_key) { alert('No backup found. Create one first.'); return; }
+          const restored = await decryptPrivateKeyFromBackup(
+            keyRow.encrypted_private_key, passphrase,
+            keyRow.private_key_salt, keyRow.private_key_iv,
+            keyRow.kdf_iterations || 250000
+          );
+          await savePrivateKeyForUser(user.id, restored);
+          logResult('E2EE', 'Unlock Backup', 'PASS', 'Key restored to this device');
+        } catch (err) {
+          logResult('E2EE', 'Unlock Backup', 'FAIL', 'Wrong passphrase or corrupt backup');
+        }
+      }} style={{...btnStyle, backgroundColor: '#89b4fa'}}>Unlock Chat Key on This Device</button>
+
+      <button onClick={async () => {
+        const passphrase = window.prompt('Create/Update encrypted key backup.\nEnter a Chat Passphrase (min 8 chars):');
+        if (!passphrase || passphrase.length < 8) { alert('Passphrase too short.'); return; }
+        try {
+          let key = await getPrivateKeyForUser(user.id);
+          if (!key) key = await getPrivateKey();
+          if (!key) { alert('No local private key found. Cannot create backup.'); return; }
+          const payload = await encryptPrivateKeyForBackup(key, passphrase);
+          const { error } = await supabase.from('user_keys').update({
+            ...payload, updated_at: new Date().toISOString()
+          }).eq('user_id', user.id);
+          if (error) throw error;
+          logResult('E2EE', 'Create Backup', 'PASS', 'Encrypted backup saved to Supabase');
+        } catch (err) {
+          logResult('E2EE', 'Create Backup', 'FAIL', err.message);
+        }
+      }} style={{...btnStyle, backgroundColor: '#cba6f7', color: '#11111b'}}>Create / Update Encrypted Key Backup</button>
       {activeFriend?.id && <button onClick={() => testChatInsert()} style={btnStyle}>Test Chat Insert ({activeFriend.username || 'Friend'})</button>}
       {activeFriend?.id && <button onClick={testSignaling} style={btnStyle}>Test WebRTC Signaling ({activeFriend.username || 'Friend'})</button>}
 
