@@ -2895,7 +2895,7 @@ export default function UserHome() {
 
   return (
     <div className="dashboard-layout user-layout-with-nav">
-      {isDebug && <DebugHealthCheck selectedFriend={selectedFriend} />}
+      {isDebug && <DebugHealthCheck selectedFriend={null} />}
       
       {/* ── Top Header with Search Toggle ── */}
       <header className="dashboard-topbar" role="banner">

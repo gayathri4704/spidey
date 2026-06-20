@@ -48,7 +48,7 @@ const btnStyle = {
   fontFamily: 'inherit'
 };
 
-export default function DebugHealthCheck({ selectedFriend }) {
+export default function DebugHealthCheck({ selectedFriend = null }) {
   const { user } = useAuth();
   const [results, setResults] = useState({});
 
