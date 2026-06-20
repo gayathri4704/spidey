@@ -2466,6 +2466,10 @@ export default function UserHome() {
       localStreamRef.current.getTracks().forEach(t => t.stop());
       localStreamRef.current = null;
     }
+    if (remoteStreamRef.current) {
+      remoteStreamRef.current.getTracks().forEach(t => t.stop());
+      remoteStreamRef.current = null;
+    }
     if (peerConnectionRef.current) {
       peerConnectionRef.current.onicecandidate = null;
       peerConnectionRef.current.ontrack        = null;
@@ -2490,12 +2494,20 @@ export default function UserHome() {
       const constraints = { audio: true, video: callType === 'video' };
       console.log('[Call] requestMedia constraints:', constraints);
       const stream = await navigator.mediaDevices.getUserMedia(constraints);
+      console.log('[WebRTC] getUserMedia success');
       localStreamRef.current = stream;
       setLocalStream(stream);
-      console.log('[Call] got local stream, tracks:', stream.getTracks().map(t => t.kind));
+      console.log('[Call] got local stream, tracks count:', stream.getTracks().length);
       return stream;
     } catch (err) {
-      console.error('[Call] requestMedia failed:', err);
+      console.error('[WebRTC] getUserMedia failure:', err);
+      if (err.name === 'NotAllowedError') {
+        alert('Please allow microphone/camera permission');
+      } else if (err.name === 'NotFoundError') {
+        alert('No camera/microphone found');
+      } else {
+        alert('Could not access microphone/camera.');
+      }
       return null;
     }
   }, []);
@@ -2509,54 +2521,59 @@ export default function UserHome() {
     const pc = new RTCPeerConnection({
       iceServers: [
         { urls: 'stun:stun.l.google.com:19302' },
-        { urls: 'stun:stun1.l.google.com:19302' },
+        { urls: 'stun:global.stun.twilio.com:3478' }
+        // Add TURN server here for production if needed
       ],
     });
 
-    pc.onicecandidate = (e) => {
-      if (e.candidate) {
-        console.log('[Call] sending ICE candidate');
-        sendCallSignalRef.current(targetUserId, 'webrtc-ice-candidate', { candidate: e.candidate, senderId: user.id });
+    pc.onicecandidate = (event) => {
+      if (event.candidate) {
+        console.log('[WebRTC] sending ICE candidate');
+        sendCallSignalRef.current(targetUserId, 'webrtc-ice-candidate', { candidate: event.candidate, senderId: user.id });
       }
     };
 
-    // Robust ontrack: handles both streams-attached and streams-less cases
-    pc.ontrack = (e) => {
-      console.log('[Call] ontrack', e.track.kind, 'streams:', e.streams.length,
-        'readyState:', e.track.readyState);
+    pc.ontrack = (event) => {
+      console.log('[WebRTC] remote track received', event.track.kind);
 
-      let stream;
-      if (e.streams && e.streams[0]) {
-        // Normal path: browser attached stream
-        stream = e.streams[0];
+      const remoteStream = remoteStreamRef.current || new MediaStream();
+      
+      if (event.streams && event.streams[0]) {
+        event.streams[0].getTracks().forEach((track) => {
+          remoteStream.addTrack(track);
+        });
       } else {
-        // Fallback: build/reuse a MediaStream and add the track manually
-        stream = remoteStreamRef.current || new MediaStream();
-        stream.addTrack(e.track);
+        remoteStream.addTrack(event.track);
       }
 
-      remoteStreamRef.current = stream;
-      setRemoteStream(new MediaStream(stream.getTracks())); // new ref forces re-render
+      remoteStreamRef.current = remoteStream;
+      setRemoteStream(new MediaStream(remoteStream.getTracks()));
 
-      console.log('[Call] remote stream now has',
-        stream.getVideoTracks().length, 'video +',
-        stream.getAudioTracks().length, 'audio tracks');
-
-      // Directly attach to DOM as well (bypasses React state timing)
       if (remoteVideoRef.current) {
-        remoteVideoRef.current.srcObject = stream;
-        remoteVideoRef.current.play().catch(e2 => console.warn('[Call] direct play:', e2));
+        remoteVideoRef.current.srcObject = remoteStream;
+        remoteVideoRef.current.play().catch(console.warn);
+      }
+
+      if (remoteAudioRef.current) {
+        remoteAudioRef.current.srcObject = remoteStream;
+        remoteAudioRef.current.play().catch(console.warn);
       }
     };
 
     pc.onconnectionstatechange = () => {
-      console.log('[Call] connectionState:', pc.connectionState);
+      console.log('[WebRTC] connectionState:', pc.connectionState);
+
       if (pc.connectionState === 'connected') {
         setCallStatus('connected');
         setActiveCall(prev => prev ? { ...prev, status: 'connected' } : prev);
       }
-      if (pc.connectionState === 'failed' || pc.connectionState === 'disconnected') {
-        console.warn('[Call] PeerConnection failed/disconnected — ending call');
+
+      if (
+        pc.connectionState === 'failed' ||
+        pc.connectionState === 'disconnected' ||
+        pc.connectionState === 'closed'
+      ) {
+        console.warn('[WebRTC] connection lost:', pc.connectionState);
         setTimeout(() => {
           if (peerConnectionRef.current?.connectionState !== 'connected') {
             setActiveCall(null);
@@ -2568,7 +2585,19 @@ export default function UserHome() {
     };
 
     pc.oniceconnectionstatechange = () => {
-      console.log('[Call] iceConnectionState:', pc.iceConnectionState);
+      console.log('[WebRTC] iceConnectionState:', pc.iceConnectionState);
+
+      if (
+        pc.iceConnectionState === 'connected' ||
+        pc.iceConnectionState === 'completed'
+      ) {
+        setCallStatus('connected');
+        setActiveCall(prev => prev ? { ...prev, status: 'connected' } : prev);
+      }
+
+      if (pc.iceConnectionState === 'failed') {
+        console.error('Call connection failed. TURN server may be required.');
+      }
     };
 
     peerConnectionRef.current = pc;
