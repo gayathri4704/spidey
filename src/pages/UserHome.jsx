@@ -1392,7 +1392,27 @@ function ChatTab({ startCall, privateKey, myPublicKey }) {
   const [systemEvents, setSystemEvents] = useState([]);
   const [localNotices, setLocalNotices] = useState([]);
   
-  const [showChatMenu, setShowChatMenu] = useState(false);
+  const [chatMenuOpen, setChatMenuOpen] = useState(false);
+  const chatMenuRef = useRef(null);
+
+  useEffect(() => {
+    const handleClickOutside = (event) => {
+      if (chatMenuRef.current && !chatMenuRef.current.contains(event.target)) {
+        setChatMenuOpen(false);
+      }
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    document.addEventListener('touchstart', handleClickOutside);
+    return () => {
+      document.removeEventListener('mousedown', handleClickOutside);
+      document.removeEventListener('touchstart', handleClickOutside);
+    };
+  }, []);
+
+  useEffect(() => {
+    setChatMenuOpen(false);
+  }, [selectedFriend?.id]);
+
   const [showClearModal, setShowClearModal] = useState(false);
   const [showAutoClearModal, setShowAutoClearModal] = useState(false);
   
@@ -1483,7 +1503,7 @@ function ChatTab({ startCall, privateKey, myPublicKey }) {
       if (data) setChatSettings(data);
     } catch (err) { console.error(err); }
     setShowClearModal(false);
-    setShowChatMenu(false);
+    setChatMenuOpen(false);
   };
 
   const handleClearForBoth = async () => {
@@ -1492,7 +1512,7 @@ function ChatTab({ startCall, privateKey, myPublicKey }) {
       await supabase.rpc('clear_chat_for_both', { other_user_id: selectedFriend.id });
     } catch (err) { console.error(err); }
     setShowClearModal(false);
-    setShowChatMenu(false);
+    setChatMenuOpen(false);
   };
 
   const handleAutoClearChange = async (scope, mode) => {
@@ -1522,7 +1542,7 @@ function ChatTab({ startCall, privateKey, myPublicKey }) {
       }
     } catch (err) { console.error(err); }
     setShowAutoClearModal(false);
-    setShowChatMenu(false);
+    setChatMenuOpen(false);
   };
 
   // Fetch Friends
@@ -1836,12 +1856,57 @@ function ChatTab({ startCall, privateKey, myPublicKey }) {
             <button className="chat-header-icon" onClick={() => {
               if (friends.some(f => f.id === selectedFriend.id)) startCall('video', selectedFriend);
             }} title="Video Call">📹</button>
-            <div style={{ position: 'relative' }}>
-              <button className="chat-header-icon" onClick={() => setShowChatMenu(!showChatMenu)} title="Menu">⋮</button>
-              {showChatMenu && (
-                <div className="chat-dropdown-menu">
-                  <button onClick={() => setShowClearModal(true)}>Clear Chat</button>
-                  <button onClick={() => setShowAutoClearModal(true)}>Auto Clear Chat</button>
+            <div className="chat-menu-wrapper" ref={chatMenuRef}>
+              <button
+                type="button"
+                className="chat-header-icon chat-more-btn"
+                onClick={(e) => {
+                  e.preventDefault();
+                  e.stopPropagation();
+                  console.log('[Chat menu] button clicked');
+                  setChatMenuOpen((prev) => {
+                    console.log('[Chat menu]', !prev ? 'opened' : 'closed');
+                    return !prev;
+                  });
+                }}
+                aria-label="More options"
+                title="Menu"
+              >
+                ⋮
+              </button>
+              {chatMenuOpen && (
+                <div
+                  className="chat-dropdown-menu chat-more-menu"
+                  onClick={(e) => e.stopPropagation()}
+                >
+                  <button
+                    type="button"
+                    onClick={async () => {
+                      console.log('[Chat menu] option clicked: Clear Chat');
+                      if (!user?.id || !selectedFriend?.id) {
+                        setMessage?.({ type: 'error', text: 'Chat user not found.' });
+                        return;
+                      }
+                      setShowClearModal(true);
+                      setChatMenuOpen(false);
+                    }}
+                  >
+                    Clear Chat
+                  </button>
+                  <button
+                    type="button"
+                    onClick={async () => {
+                      console.log('[Chat menu] option clicked: Auto Clear Chat');
+                      if (!user?.id || !selectedFriend?.id) {
+                        setMessage?.({ type: 'error', text: 'Chat user not found.' });
+                        return;
+                      }
+                      setShowAutoClearModal(true);
+                      setChatMenuOpen(false);
+                    }}
+                  >
+                    Auto Clear Chat
+                  </button>
                 </div>
               )}
             </div>
