@@ -264,20 +264,26 @@ export function PlayerProvider({ children }) {
         return;
       }
 
-      // ── 3. Fetch signed URL from Supabase Storage ─
-      const storagePath = song.storage_path || song.file_path;
-      if (!storagePath) {
-        throw new Error('No audio source available for this song.');
+      // ── 3. Playable URL or Fetch signed URL from Supabase Storage ─
+      let finalUrl = song.playable_url;
+
+      if (!finalUrl) {
+        const storagePath = song.storage_path || song.file_path;
+        if (!storagePath) {
+          throw new Error('No audio source available for this song.');
+        }
+
+        const bucket = song.bucket_id || 'spidey';
+        const { data, error } = await supabase.storage
+          .from(bucket)
+          .createSignedUrl(storagePath, 3600); // 1-hour expiry
+
+        if (error) throw new Error(`Storage error: ${error.message}`);
+        finalUrl = data.signedUrl;
       }
 
-      const { data, error } = await supabase.storage
-        .from(BUCKET)
-        .createSignedUrl(storagePath, 3600); // 1-hour expiry
-
-      if (error) throw new Error(`Storage error: ${error.message}`);
-
       // Start playing immediately via signed URL
-      audio.src    = data.signedUrl;
+      audio.src    = finalUrl;
       audio.volume = stateRef.current.volume;
       dispatch({ type: 'LOAD_DONE' });
       await audio.play();
@@ -286,7 +292,7 @@ export function PlayerProvider({ children }) {
       }
 
       // ── Background: fetch blob → cache in IDB ────
-      fetch(data.signedUrl)
+      fetch(finalUrl)
         .then((r) => r.blob())
         .then((blob) => {
           setAudioCache(song.id, blob).catch(() => {});

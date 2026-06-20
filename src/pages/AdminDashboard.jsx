@@ -177,6 +177,27 @@ export default function AdminDashboard() {
     setTimeout(() => setMessage({ text: '', type: '' }), duration);
   };
 
+  // ── User Requests Management ──
+  const handleUserRequest = async (targetUserId, action) => {
+    setProcessingAction(true);
+    try {
+      const status = action === 'grant' ? 'approved' : 'rejected';
+      const { error } = await supabase
+        .from('profiles')
+        .update({ access_status: status })
+        .eq('id', targetUserId);
+      if (error) throw error;
+
+      setProfiles(prev => prev.map(p => p.id === targetUserId ? { ...p, access_status: status } : p));
+      showFlash(`✅ User access ${status} successfully.`, 'success');
+    } catch (err) {
+      console.error('[AdminDashboard] User request error:', err);
+      showFlash(err.message || 'Failed to update user request.', 'error');
+    } finally {
+      setProcessingAction(false);
+    }
+  };
+
   // ── Role Management ──
   const handleUpdateRole = async (targetUserId, newRole) => {
     if (targetUserId === user.id) {
@@ -587,6 +608,14 @@ export default function AdminDashboard() {
         <nav className="admin-tabs-nav" aria-label="Admin tabs">
           <button className={`admin-tab-btn ${activeTab === 'overview' ? 'active' : ''}`} onClick={() => setActiveTab('overview')}>📊 Overview</button>
           <button className={`admin-tab-btn ${activeTab === 'users' ? 'active' : ''}`} onClick={() => setActiveTab('users')}>👥 Users</button>
+          <button className={`admin-tab-btn ${activeTab === 'requests' ? 'active' : ''}`} onClick={() => setActiveTab('requests')}>
+            📬 Requests
+            {profiles.filter(p => p.access_status === 'pending').length > 0 && (
+              <span className="badge badge-red" style={{ marginLeft: '8px', fontSize: '0.7rem' }}>
+                {profiles.filter(p => p.access_status === 'pending').length}
+              </span>
+            )}
+          </button>
           <button className={`admin-tab-btn ${activeTab === 'songs' ? 'active' : ''}`} onClick={() => setActiveTab('songs')}>🎵 Songs</button>
           <button className={`admin-tab-btn ${activeTab === 'playlists' ? 'active' : ''}`} onClick={() => setActiveTab('playlists')}>📋 Playlists</button>
           <button className={`admin-tab-btn ${activeTab === 'shares' ? 'active' : ''}`} onClick={() => setActiveTab('shares')}>📤 Shares</button>
@@ -757,6 +786,72 @@ export default function AdminDashboard() {
                     </table>
                   </div>
                 )}
+              </div>
+            )}
+
+            {/* ── USER REQUESTS TAB ──────────────────────────────────── */}
+            {activeTab === 'requests' && (
+              <div className="dash-section">
+                <div style={{ marginBottom: '1.5rem' }}>
+                  <h2 style={{ color: '#cdd6f4', fontSize: '1.5rem', marginBottom: '0.5rem' }}>Pending Approvals</h2>
+                  <p className="text-muted">Review and manage new user registrations.</p>
+                </div>
+
+                <div className="dash-card">
+                  <table className="admin-table">
+                    <thead>
+                      <tr>
+                        <th>User Info</th>
+                        <th>Joined Date</th>
+                        <th style={{ textAlign: 'right' }}>Actions</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {profiles.filter(p => p.access_status === 'pending').length === 0 ? (
+                        <tr>
+                          <td colSpan="3" style={{ textAlign: 'center', padding: '2rem' }}>
+                            <span className="text-muted">No pending user requests.</span>
+                          </td>
+                        </tr>
+                      ) : (
+                        profiles.filter(p => p.access_status === 'pending').map(p => (
+                          <tr key={p.id}>
+                            <td>
+                              <div style={{ display: 'flex', alignItems: 'center', gap: '1rem' }}>
+                                <div className="admin-avatar">👤</div>
+                                <div>
+                                  <div style={{ fontWeight: 'bold' }}>{p.display_name} <span className="text-muted" style={{ fontWeight: 'normal' }}>@{p.username}</span></div>
+                                  {p.email && <div className="text-muted" style={{ fontSize: '0.85rem' }}>{p.email}</div>}
+                                </div>
+                              </div>
+                            </td>
+                            <td className="text-muted">
+                              {formatDate(p.created_at || new Date().toISOString())}
+                            </td>
+                            <td style={{ textAlign: 'right' }}>
+                              <button
+                                className="btn btn-sm"
+                                style={{ backgroundColor: '#a6e3a1', color: '#11111b', marginRight: '0.5rem' }}
+                                onClick={() => handleUserRequest(p.id, 'grant')}
+                                disabled={processingAction}
+                              >
+                                ✅ Grant Access
+                              </button>
+                              <button
+                                className="btn btn-sm"
+                                style={{ backgroundColor: '#f38ba8', color: '#11111b' }}
+                                onClick={() => handleUserRequest(p.id, 'decline')}
+                                disabled={processingAction}
+                              >
+                                ❌ Decline
+                              </button>
+                            </td>
+                          </tr>
+                        ))
+                      )}
+                    </tbody>
+                  </table>
+                </div>
               </div>
             )}
 

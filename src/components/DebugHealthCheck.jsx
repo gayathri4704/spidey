@@ -143,20 +143,32 @@ export default function DebugHealthCheck({ selectedFriend = null }) {
         logResult('Songs', 'Status', 'PASS', `Count: ${data.length}, Titles: ${data.slice(0, 3).map(s => s.title).join(', ')}`);
         
         const song = data[0];
-        const audioUrl = song.audio_url || (song.storage_path ? supabase.storage.from('songs').getPublicUrl(song.storage_path).data.publicUrl : null);
-        if (audioUrl) {
-          try {
-            const res = await fetch(audioUrl, { method: 'HEAD' });
-            if (res.ok) {
-              logResult('Storage', 'Status', 'PASS', 'First song URL is accessible');
-            } else {
-              logResult('Storage', 'Status', 'FAIL', `First song URL returned ${res.status}`);
+        const path = song.storage_path || song.file_path;
+        
+        if (path) {
+          const bucket = song.bucket_id || 'spidey';
+          logResult('Storage', 'bucket', 'INFO', bucket);
+          logResult('Storage', 'path', 'INFO', path);
+          
+          const { data: signedData, error: signedError } = await supabase.storage.from(bucket).createSignedUrl(path, 3600);
+          
+          if (signedError || !signedData?.signedUrl) {
+            logResult('Storage', 'signed url created', 'FAIL', signedError?.message || 'No URL returned');
+          } else {
+            logResult('Storage', 'signed url created', 'PASS', 'true');
+            try {
+              const res = await fetch(signedData.signedUrl, { method: 'HEAD' });
+              if (res.ok) {
+                logResult('Storage', 'fetch status', 'PASS', `HTTP ${res.status}`);
+              } else {
+                logResult('Storage', 'fetch status', 'FAIL', `HTTP ${res.status}`);
+              }
+            } catch(err) {
+              logResult('Storage', 'fetch status', 'FAIL', err.message);
             }
-          } catch(err) {
-            logResult('Storage', 'Status', 'FAIL', err.message);
           }
         } else {
-          logResult('Storage', 'Status', 'FAIL', 'No audio URL or storage path found on first song');
+          logResult('Storage', 'Status', 'FAIL', 'No file_path or storage_path found on first song');
         }
       }
     }

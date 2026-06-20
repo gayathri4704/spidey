@@ -45,9 +45,21 @@ async function loadAllSongs(userId) {
     supabase.from('songs').select('*').eq('song_type', 'admin').order('created_at', { ascending: false }),
     supabase.from('songs').select('*').eq('song_type', 'user').eq('uploaded_by', userId).order('created_at', { ascending: false }),
   ]);
+  
+  const adminSongs = adminResult.data || [];
+  const mySongs = myResult.data || [];
+  
+  const resolvePlayableUrl = async (song) => {
+    const path = song.storage_path || song.file_path;
+    if (!path) return { ...song, playable_url: null };
+    const bucket = song.bucket_id || 'spidey';
+    const { data } = await supabase.storage.from(bucket).createSignedUrl(path, 3600);
+    return { ...song, playable_url: data?.signedUrl || null };
+  };
+
   return {
-    adminSongs: adminResult.data || [],
-    mySongs:    myResult.data    || [],
+    adminSongs: await Promise.all(adminSongs.map(resolvePlayableUrl)),
+    mySongs: await Promise.all(mySongs.map(resolvePlayableUrl)),
   };
 }
 

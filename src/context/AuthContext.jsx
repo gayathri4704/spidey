@@ -68,9 +68,11 @@ async function ensureProfile(authUser, usernameFallback) {
     .upsert(
       {
         id: authUser.id,
+        email: authUser.email,
         username: fallbackName,
         display_name: fallbackName,
-        role: 'user'
+        role: 'user',
+        access_status: 'pending'
       },
       { onConflict: 'id' }
     )
@@ -97,6 +99,7 @@ function buildUserObject(authUser, profile) {
     username:     profile?.username     ?? authUser.email,
     display_name: profile?.display_name ?? authUser.email,
     role:         profile?.role         ?? 'user',
+    access_status:profile?.access_status?? 'pending',
     theme:        profile?.theme        ?? 'default',
   };
 }
