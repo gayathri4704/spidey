@@ -56,7 +56,7 @@ export default function Navbar() {
             onClick={(e) => { e.preventDefault(); handleNavClick('#home'); }}
             aria-label="Spidey – Go to home"
           >
-            <span className="navbar__logo-web" aria-hidden="true">🕸️</span>
+            <img src="/favicon.png" alt="Spidey Logo" className="navbar__logo-icon" />
             <span className="navbar__logo-text">SPIDEY</span>
           </a>
 

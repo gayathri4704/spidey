@@ -69,7 +69,10 @@
   margin-bottom: var(--space-md);
 }
 .login-panel__spider {
-  font-size: 8rem;
+  width: 128px;
+  height: 128px;
+  object-fit: cover;
+  border-radius: 24px;
   display: block;
   margin-bottom: var(--space-xl);
   animation: float 4s ease-in-out infinite;
@@ -137,7 +140,7 @@
   text-align: center;
   margin-bottom: var(--space-xl);
 }
-.login-mobile-logo__icon { font-size: 3rem; }
+.login-mobile-logo__icon { width: 48px; height: 48px; border-radius: 12px; object-fit: cover; margin: 0 auto 8px auto; display: block; }
 .login-mobile-logo__text {
   font-family: var(--font-display);
   font-size: 2.8rem;

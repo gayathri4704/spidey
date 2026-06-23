@@ -40,10 +40,11 @@
   -webkit-text-fill-color: transparent;
   background-clip: text;
 }
-.navbar__logo-web {
-  font-size: 1.4rem;
-  line-height: 1;
-  filter: drop-shadow(0 0 6px var(--spidey-red));
+.navbar__logo-icon {
+  width: 32px;
+  height: 32px;
+  border-radius: 8px;
+  object-fit: cover;
 }
 
 .navbar__links {

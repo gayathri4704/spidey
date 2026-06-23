@@ -345,7 +345,7 @@ export default function LoginPage() {
 
       {/* ── Left decorative panel ── */}
       <div className="login-panel" aria-hidden="true">
-        <span className="login-panel__spider">🕷️</span>
+        <img src="/icons/icon-192.png" alt="Spidey Logo" className="login-panel__spider" />
         <div className="login-panel__logo">SPIDEY</div>
         <p className="login-panel__tagline">Your Friendly Neighbourhood App</p>
         <div className="login-panel__quote">
@@ -361,7 +361,7 @@ export default function LoginPage() {
 
         {/* Mobile logo */}
         <div className="login-mobile-logo">
-          <div className="login-mobile-logo__icon">🕷️</div>
+          <img src="/icons/icon-192.png" alt="Spidey Logo" className="login-mobile-logo__icon" />
           <div className="login-mobile-logo__text">SPIDEY</div>
         </div>
 
