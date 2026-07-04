@@ -1467,6 +1467,7 @@ function LibraryTab({ favorites, mySongs, search, favoriteIds, onFavToggle, onUp
         file_size:    file.size,
         is_public:    false,
       };
+      console.log('[Upload] final songs payload keys:', Object.keys(payload));
       console.log('[Upload] storage path:', filePath);
       console.log('[Upload] insert payload:', payload);
 

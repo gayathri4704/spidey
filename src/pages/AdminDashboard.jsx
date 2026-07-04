@@ -97,7 +97,7 @@ export default function AdminDashboard() {
   
   // Admin Create/Edit Modals state
   const [showSongModal, setShowSongModal] = useState(false);
-  const [songFormData, setSongFormData] = useState({ id: null, title: '', artist: '', visibility: 'public', selectedUsers: [], file: null });
+  const [songFormData, setSongFormData] = useState({ id: null, title: '', artist: '', is_public: true, selectedUsers: [], file: null });
   const [showPlaylistModal, setShowPlaylistModal] = useState(false);
   const [showThemeModal, setShowThemeModal] = useState(false);
   const [themeFormData, setThemeFormData] = useState({ id: null, name: '', mode: 'dark', description: '', bg_primary: '#0a0c14', bg_secondary: '#0f1220', bg_card: '#131826', bg_card_hover: '#1a2235', bg_overlay: 'rgba(10, 12, 20, 0.85)', text_primary: '#f0f4ff', text_secondary: '#9db4cc', text_muted: '#5a7090', text_accent: '#e74c3c', border_primary: 'rgba(192, 57, 43, 0.3)', border_secondary: 'rgba(37, 99, 235, 0.25)', border_subtle: 'rgba(240, 244, 255, 0.08)', primary_color: '#c0392b', secondary_color: '#1a3a6b', accent_color: '#e74c3c' });
@@ -399,12 +399,10 @@ export default function AdminDashboard() {
 
   // ── Create/Edit Handlers ──
   const openEditSong = async (song) => {
-    setSongFormData({ id: song.id, title: song.title, artist: song.artist, visibility: song.visibility || 'public', selectedUsers: [], file: null });
+    setSongFormData({ id: song.id, title: song.title, artist: song.artist, is_public: song.is_public !== false, selectedUsers: [], file: null });
     setShowSongModal(true);
-    if (song.visibility === 'selected') {
-      const { data } = await supabase.from('admin_song_access').select('user_id').eq('song_id', song.id);
-      if (data) setSongFormData(prev => ({ ...prev, selectedUsers: data.map(d => d.user_id) }));
-    }
+    const { data } = await supabase.from('admin_song_access').select('user_id').eq('song_id', song.id);
+    if (data && data.length > 0) setSongFormData(prev => ({ ...prev, selectedUsers: data.map(d => d.user_id) }));
   };
 
   const handleSaveSong = async (e) => {
@@ -436,12 +434,13 @@ export default function AdminDashboard() {
           title: songFormData.title,
           artist: songFormData.artist,
           song_type: 'admin',
-          is_public: songFormData.visibility !== 'private',
+          is_public: songFormData.is_public,
           bucket_id: BUCKET,
           storage_path: storagePath,
           file_path: storagePath,
           uploaded_by: user.id
         };
+        console.log('[Upload] final songs payload keys:', Object.keys(payload));
         console.log('[Upload] storage path:', storagePath);
         console.log('[Upload] insert payload:', payload);
 
@@ -456,8 +455,9 @@ export default function AdminDashboard() {
         const payload = {
           title: songFormData.title,
           artist: songFormData.artist,
-          is_public: songFormData.visibility !== 'private'
+          is_public: songFormData.is_public
         };
+        console.log('[Upload] final songs payload keys:', Object.keys(payload));
         console.log('[Upload] update payload:', payload);
 
         const { error } = await supabase.from('songs').update(payload).eq('id', songId);
@@ -465,11 +465,11 @@ export default function AdminDashboard() {
           console.error('[Upload] error:', error);
           throw error;
         }
-        setSongs(prev => prev.map(s => s.id === songId ? { ...s, title: songFormData.title, artist: songFormData.artist, is_public: songFormData.visibility !== 'private' } : s));
+        setSongs(prev => prev.map(s => s.id === songId ? { ...s, title: songFormData.title, artist: songFormData.artist, is_public: songFormData.is_public } : s));
       }
 
       await supabase.from('admin_song_access').delete().eq('song_id', songId);
-      if (songFormData.visibility === 'selected' && songFormData.selectedUsers.length > 0) {
+      if (!songFormData.is_public && songFormData.selectedUsers.length > 0) {
         const accessRows = songFormData.selectedUsers.map(uid => ({ song_id: songId, user_id: uid }));
         const { error: accessErr } = await supabase.from('admin_song_access').insert(accessRows);
         if (accessErr) throw accessErr;
@@ -870,7 +870,7 @@ export default function AdminDashboard() {
               <div className="dash-section">
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.5rem' }}>
                   <h2 className="dash-section-title" style={{ marginBottom: 0 }}>🎵 Song Management</h2>
-                  <button className="btn btn-primary" onClick={() => { setSongFormData({ id: null, title: '', artist: '', visibility: 'public', selectedUsers: [], file: null }); setShowSongModal(true); }}>
+                  <button className="btn btn-primary" onClick={() => { setSongFormData({ id: null, title: '', artist: '', is_public: true, selectedUsers: [], file: null }); setShowSongModal(true); }}>
                     + Upload Admin Song
                   </button>
                 </div>
@@ -1316,14 +1316,14 @@ export default function AdminDashboard() {
                   <input type="text" className="admin-input" value={songFormData.artist} onChange={e => setSongFormData(prev => ({ ...prev, artist: e.target.value }))} disabled={processingAction} required />
                 </div>
                 <div>
-                  <label className="input-label">Visibility</label>
-                  <select className="admin-input" value={songFormData.visibility} onChange={e => setSongFormData(prev => ({ ...prev, visibility: e.target.value }))} disabled={processingAction}>
+                  <label className="input-label">Visibility (is_public)</label>
+                  <select className="admin-input" value={songFormData.is_public ? 'public' : 'private'} onChange={e => setSongFormData(prev => ({ ...prev, is_public: e.target.value === 'public', selectedUsers: e.target.value !== 'selected' ? [] : prev.selectedUsers }))} disabled={processingAction}>
                     <option value="public">Public (Visible to All)</option>
-                    <option value="selected">Selected Users Only</option>
+                    <option value="selected">Selected Users Only (Private)</option>
                     <option value="private">Private (Admin Only)</option>
                   </select>
                 </div>
-                {songFormData.visibility === 'selected' && (
+                {!songFormData.is_public && songFormData.selectedUsers !== undefined && (
                   <div>
                     <label className="input-label">Select Users</label>
                     <div className="admin-scroll-list" style={{ maxHeight: '150px', overflowY: 'auto', background: 'rgba(255,255,255,0.02)', border: '1px solid var(--border-subtle)', borderRadius: 'var(--radius-md)', padding: '0.5rem' }}>
