@@ -427,35 +427,45 @@ export default function AdminDashboard() {
           .upload(storagePath, songFormData.file);
 
         if (uploadError) throw uploadError;
-        const { data: publicUrlData } = supabase.storage.from(BUCKET).getPublicUrl(storagePath);
-        finalFileUrl = publicUrlData.publicUrl;
       }
 
       let songId = songFormData.id;
 
       if (!songId) {
-        const { data, error } = await supabase.from('songs').insert([{
+        const payload = {
           title: songFormData.title,
           artist: songFormData.artist,
           song_type: 'admin',
           is_public: songFormData.visibility !== 'private',
-          visibility: songFormData.visibility,
-          file_url: finalFileUrl,
+          bucket_id: BUCKET,
           storage_path: storagePath,
+          file_path: storagePath,
           uploaded_by: user.id
-        }]).select();
-        if (error) throw error;
+        };
+        console.log('[Upload] storage path:', storagePath);
+        console.log('[Upload] insert payload:', payload);
+
+        const { data, error } = await supabase.from('songs').insert([payload]).select();
+        if (error) {
+          console.error('[Upload] error:', error);
+          throw error;
+        }
         songId = data[0].id;
         setSongs(prev => [data[0], ...prev]);
       } else {
-        const { error } = await supabase.from('songs').update({
+        const payload = {
           title: songFormData.title,
           artist: songFormData.artist,
-          is_public: songFormData.visibility !== 'private',
-          visibility: songFormData.visibility
-        }).eq('id', songId);
-        if (error) throw error;
-        setSongs(prev => prev.map(s => s.id === songId ? { ...s, title: songFormData.title, artist: songFormData.artist, visibility: songFormData.visibility, is_public: songFormData.visibility !== 'private' } : s));
+          is_public: songFormData.visibility !== 'private'
+        };
+        console.log('[Upload] update payload:', payload);
+
+        const { error } = await supabase.from('songs').update(payload).eq('id', songId);
+        if (error) {
+          console.error('[Upload] error:', error);
+          throw error;
+        }
+        setSongs(prev => prev.map(s => s.id === songId ? { ...s, title: songFormData.title, artist: songFormData.artist, is_public: songFormData.visibility !== 'private' } : s));
       }
 
       await supabase.from('admin_song_access').delete().eq('song_id', songId);

@@ -1455,18 +1455,27 @@ function LibraryTab({ favorites, mySongs, search, favoriteIds, onFavToggle, onUp
       const { error: upErr } = await supabase.storage.from(BUCKET).upload(filePath, file, { contentType: file.type });
       if (upErr) throw upErr;
 
-      const { data: newSong, error: insErr } = await supabase.from('songs').insert({
+      const payload = {
         title:        title.trim(),
         artist:       artist.trim(),
         uploaded_by:  user.id,
         song_type:    'user',
         file_path:    filePath,
         storage_path: filePath,
+        bucket_id:    BUCKET,
         mime_type:    file.type,
         file_size:    file.size,
         is_public:    false,
-      }).select().single();
-      if (insErr) { await supabase.storage.from(BUCKET).remove([filePath]); throw insErr; }
+      };
+      console.log('[Upload] storage path:', filePath);
+      console.log('[Upload] insert payload:', payload);
+
+      const { data: newSong, error: insErr } = await supabase.from('songs').insert(payload).select().single();
+      if (insErr) { 
+        console.error('[Upload] error:', insErr);
+        await supabase.storage.from(BUCKET).remove([filePath]); 
+        throw insErr; 
+      }
 
       setStatus('success'); setTitle(''); setArtist(''); setFile(null); if (fileInputRef.current) fileInputRef.current.value = '';
       if(onUploaded) onUploaded(newSong);
